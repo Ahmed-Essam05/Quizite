@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Create a Quizite account to start building and tracking quizzes."
+    />
+    <title>Quizite — Create account</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/auth.css" />
+    <script src="/auth.js" defer></script>
+  </head>
+  <body data-page="signup">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="auth-topbar">
+      <a class="brand" href="/" aria-label="Quizite home">
+        <span class="brand-mark" aria-hidden="true">Q</span>
+        <span class="brand-title">Quizite</span>
+      </a>
+      <button
+        class="theme-toggle"
+        type="button"
+        data-theme-toggle
+        aria-label="Switch color theme"
+        title="Switch theme"
+      >
+        <span class="theme-toggle__sun" aria-hidden="true">&#9728;</span>
+        <span class="theme-toggle__moon" aria-hidden="true">&#9790;</span>
+      </button>
+    </header>
+
+    <main id="main-content" class="auth-main" tabindex="-1">
+      <div class="auth-card">
+        <div class="auth-card__header">
+          <h1 class="auth-title">Create your account</h1>
+          <p class="auth-subtitle">
+            Already have an account?
+            <a class="auth-link" href="/login">Sign in</a>.
+          </p>
+        </div>
+
+        <div id="error-banner" class="error-banner" role="alert" hidden></div>
+
+        <form
+          id="signup-form"
+          class="auth-form"
+          novalidate
+          aria-label="Sign up form"
+        >
+          <!-- Username -->
+          <div class="field-group">
+            <label class="field-label" for="username">Username</label>
+            <input
+              class="field-input"
+              id="username"
+              name="username"
+              type="text"
+              autocomplete="username"
+              autocorrect="off"
+              autocapitalize="none"
+              spellcheck="false"
+              required
+              aria-required="true"
+              aria-describedby="username-hint username-error"
+            />
+            <span class="field-hint" id="username-hint"
+              >3–30 characters. Letters, numbers, and underscores only.</span
+            >
+            <span
+              class="field-error"
+              id="username-error"
+              role="alert"
+              hidden
+            ></span>
+          </div>
+
+          <!-- Email -->
+          <div class="field-group">
+            <label class="field-label" for="email">Email address</label>
+            <input
+              class="field-input"
+              id="email"
+              name="email"
+              type="email"
+              autocomplete="email"
+              required
+              aria-required="true"
+              aria-describedby="email-error"
+            />
+            <span
+              class="field-error"
+              id="email-error"
+              role="alert"
+              hidden
+            ></span>
+          </div>
+
+          <!-- Password -->
+          <div class="field-group">
+            <label class="field-label" for="password">Password</label>
+            <div class="field-input-wrap">
+              <input
+                class="field-input"
+                id="password"
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                required
+                aria-required="true"
+                aria-describedby="password-hint password-error"
+              />
+              <button
+                class="show-password"
+                type="button"
+                aria-label="Show password"
+                data-toggle-password
+              >
+                <svg
+                  class="eye-icon"
+                  viewBox="0 0 16 16"
+                  width="16"
+                  height="16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M1.679 7.932c.412-.621 1.242-1.75 2.366-2.717C5.175 4.242 6.527 3.5 8 3.5c1.473 0 2.824.742 3.955 1.715 1.124.967 1.954 2.096 2.366 2.717a.119.119 0 0 1 0 .136c-.412.621-1.242 1.75-2.366 2.717C10.825 11.758 9.473 12.5 8 12.5c-1.473 0-2.824-.742-3.955-1.715C2.92 9.818 2.09 8.69 1.679 8.068a.119.119 0 0 1 0-.136ZM8 2c-1.981 0-3.67.992-4.933 2.078C1.797 5.169.88 6.423.43 7.1a1.619 1.619 0 0 0 0 1.798c.45.678 1.367 1.932 2.637 3.024C4.329 13.008 6.019 14 8 14c1.981 0 3.67-.992 4.933-2.078 1.27-1.092 2.187-2.346 2.637-3.024a1.619 1.619 0 0 0 0-1.798c-.45-.678-1.367-1.932-2.637-3.024C11.671 2.992 9.981 2 8 2Zm0 8a2 2 0 1 1-.001-3.999A2 2 0 0 1 8 10Z"
+                  ></path>
+                </svg>
+              </button>
+            </div>
+            <span class="field-hint" id="password-hint"
+              >At least 8 characters with at least one letter and one
+              number.</span
+            >
+            <span
+              class="field-error"
+              id="password-error"
+              role="alert"
+              hidden
+            ></span>
+          </div>
+
+          <!-- Submit -->
+          <button class="auth-submit" id="submit-btn" type="submit">
+            <span class="submit-label">Create account</span>
+            <span class="submit-spinner" aria-hidden="true" hidden></span>
+          </button>
+        </form>
+
+        <p class="auth-terms">
+          By creating an account you agree to our
+          <a class="auth-link" href="#">Terms of Service</a>.
+        </p>
+      </div>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

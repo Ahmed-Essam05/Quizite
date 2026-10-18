@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Take this quiz on Quizite and test your knowledge."
+    />
+    <title>Quizite — Take quiz</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/overview.css" />
+    <link rel="stylesheet" href="/quiz.css" />
+    <script src="/quiz.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to quiz content</a>
+
+    <!-- Topbar -->
+    <header class="topbar quiz-topbar">
+      <div class="quiz-topbar__left">
+        <a class="brand" href="/" aria-label="Quizite home">
+          <span class="brand-mark" aria-hidden="true">Q</span>
+          <span class="brand-title">Quizite</span>
+        </a>
+      </div>
+
+      <div class="topbar-actions">
+        <button
+          class="theme-toggle"
+          type="button"
+          data-theme-toggle
+          aria-label="Switch color theme"
+          title="Switch theme"
+        >
+          <span class="theme-toggle__sun" aria-hidden="true">☀</span>
+          <span class="theme-toggle__moon" aria-hidden="true">☾</span>
+        </button>
+
+        <button
+          class="btn btn-subtle like-button"
+          type="button"
+          id="like-btn"
+          aria-pressed="false"
+          hidden
+        >
+          <span class="like-button__icon" aria-hidden="true">♥</span>
+          <span id="like-count">0</span>
+        </button>
+
+        <button class="btn btn-subtle" type="button" id="share-quiz-btn">
+          <svg
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              d="m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z"
+            ></path>
+          </svg>
+          <span>Share link</span>
+        </button>
+
+        <a class="btn" href="/">Overview</a>
+      </div>
+    </header>
+
+    <main id="main-content" class="quiz-main" tabindex="-1">
+      <!-- Loading State -->
+      <div id="quiz-loading" class="quiz-loading">
+        <span class="quiz-spinner" aria-hidden="true"></span>
+        <p>Loading quiz…</p>
+      </div>
+
+      <!-- Error State -->
+      <div id="quiz-error" class="quiz-error-card" hidden>
+        <h2>Quiz Unavailable</h2>
+        <p id="quiz-error-msg">The requested quiz could not be loaded.</p>
+        <a class="btn btn--primary" href="/">Go to overview</a>
+      </div>
+
+      <!-- Quiz Content Area -->
+      <div id="quiz-container" class="quiz-container" hidden>
+        <!-- Quiz Header Card -->
+        <header class="quiz-header-card">
+          <div class="quiz-header-card__top">
+            <h1 id="quiz-title" class="quiz-hero-title"></h1>
+            <span id="quiz-status-pill" class="quiz-pill"></span>
+          </div>
+
+          <p id="quiz-desc" class="quiz-hero-desc"></p>
+
+          <div class="quiz-meta-row">
+            <span class="meta-tag">
+              <span class="meta-dot" aria-hidden="true"></span>
+              <span id="quiz-q-count"></span>
+            </span>
+            <span class="meta-tag" id="quiz-author-wrap">
+              Created by <strong id="quiz-author"></strong>
+            </span>
+            <span class="meta-tag" id="quiz-took-wrap">
+              Completed by <strong id="quiz-took-count">0</strong> people
+            </span>
+          </div>
+        </header>
+
+        <!-- Status Note (already completed / retakes disabled) -->
+        <div id="quiz-status-note" class="quiz-status-note" hidden></div>
+
+        <!-- Quiz Questions Form -->
+        <form id="quiz-take-form" class="quiz-questions-form" novalidate>
+          <div id="questions-render-area" class="questions-render-area"></div>
+
+          <div class="quiz-form-footer">
+            <button
+              class="btn btn--primary btn-large"
+              type="submit"
+              id="submit-quiz-btn"
+            >
+              Submit Answers
+            </button>
+          </div>
+        </form>
+
+        <!-- Results Card (displayed after submission) -->
+        <section
+          id="results-card"
+          class="results-card"
+          hidden
+          aria-live="polite"
+        >
+          <div class="results-card__header">
+            <span class="results-score-badge" id="results-badge">100%</span>
+            <h2 class="results-title" id="results-title">Quiz Completed!</h2>
+            <p class="results-score-text">
+              You scored <strong id="results-score-count">0</strong> out of
+              <strong id="results-total-count">0</strong> questions (<span
+                id="results-percentage"
+                >0%</span
+              >).
+            </p>
+          </div>
+
+          <!-- Question-by-Question Review -->
+          <div class="results-review">
+            <h3 class="results-review__heading">Detailed Review</h3>
+            <p id="results-ungraded-note" class="results-ungraded-note" hidden>
+              Some written answers were collected but not auto-graded because the
+              creator did not provide accepted answers for them.
+            </p>
+            <div
+              id="results-breakdown-list"
+              class="results-breakdown-list"
+            ></div>
+          </div>
+
+          <div class="results-actions">
+            <button class="btn" type="button" id="retake-btn">
+              Retake quiz
+            </button>
+            <button
+              class="btn btn--primary"
+              type="button"
+              id="share-result-btn"
+            >
+              Share this quiz
+            </button>
+            <a class="btn" href="/">Return to overview</a>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

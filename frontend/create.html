@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Create a new quiz on Quizite with custom questions and shareable link."
+    />
+    <title>Quizite — Create a quiz</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/overview.css" />
+    <link rel="stylesheet" href="/create.css" />
+    <script src="/create.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <!-- Topbar Navigation -->
+    <header class="topbar create-topbar">
+      <div class="create-topbar__left">
+        <a class="brand" href="/" aria-label="Quizite home">
+          <span class="brand-mark" aria-hidden="true">Q</span>
+          <span class="brand-title">Quizite</span>
+        </a>
+        <span class="topbar-divider" aria-hidden="true">/</span>
+        <span class="create-breadcrumb" id="topbar-breadcrumb">Create a quiz</span>
+      </div>
+
+      <div class="topbar-actions">
+        <button
+          class="theme-toggle"
+          type="button"
+          data-theme-toggle
+          aria-label="Switch color theme"
+          title="Switch theme"
+        >
+          <span class="theme-toggle__sun" aria-hidden="true">☀</span>
+          <span class="theme-toggle__moon" aria-hidden="true">☾</span>
+        </button>
+
+        <a class="btn" href="/">Cancel</a>
+        <button class="btn" type="button" id="save-draft-btn">
+          Save draft
+        </button>
+        <button class="btn btn--primary" type="button" id="publish-quiz-btn">
+          Publish quiz
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content" class="create-main" tabindex="-1">
+      <!-- Edit Mode Banner -->
+      <div id="edit-mode-banner" class="draft-notice" hidden>
+        <span>You are editing an existing quiz. Changes replace the live quiz when saved.</span>
+      </div>
+
+      <!-- Restored Draft Banner -->
+      <div id="draft-notice" class="draft-notice" hidden>
+        <span>Restored in-progress draft from your browser.</span>
+        <button type="button" id="clear-draft-btn" class="btn-subtle">
+          Discard draft
+        </button>
+      </div>
+
+      <!-- Error / Status Banner -->
+      <div
+        id="error-banner"
+        class="create-error-banner"
+        role="alert"
+        hidden
+      ></div>
+
+      <!-- Quiz Metadata Section -->
+      <section
+        class="card section-block"
+        aria-labelledby="quiz-details-heading"
+      >
+        <h2 id="quiz-details-heading" class="section-title">1. Quiz Details</h2>
+
+        <div class="field-group">
+          <label class="field-label" for="quiz-title">
+            Quiz title <span class="required-star">*</span>
+          </label>
+          <input
+            class="field-input"
+            id="quiz-title"
+            type="text"
+            placeholder="e.g. World Geography & Landmarks Challenge"
+            maxlength="150"
+            required
+            aria-required="true"
+          />
+          <span class="field-hint">Required. Maximum 150 characters.</span>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="quiz-description">
+            Description <span class="field-optional">(optional)</span>
+          </label>
+          <textarea
+            class="field-textarea"
+            id="quiz-description"
+            rows="2"
+            placeholder="A short description shown on the quiz card and share link..."
+            maxlength="1000"
+          ></textarea>
+          <span class="field-hint">Optional. Maximum 1000 characters.</span>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="quiz-status-select"
+            >Visibility & Sharing</label
+          >
+          <select class="field-select" id="quiz-status-select">
+            <option value="published" selected>
+              Published — Accessible via unique shareable link
+            </option>
+            <option value="draft">Draft — Private to you</option>
+          </select>
+          <span class="field-hint">
+            Anyone with the unique link can take a published quiz.
+          </span>
+        </div>
+
+        <div class="field-group">
+          <span class="field-label">Quiz settings</span>
+          <label class="setting-row" for="allow-retakes">
+            <input type="checkbox" id="allow-retakes" />
+            <span>
+              <strong>Allow retakes</strong>
+              <span class="field-hint">
+                When disabled, quiz takers can submit each quiz only once.
+              </span>
+            </span>
+          </label>
+          <label class="setting-row" for="show-correct-answers">
+            <input type="checkbox" id="show-correct-answers" />
+            <span>
+              <strong>Show correct answers after submission</strong>
+              <span class="field-hint">
+                When enabled, takers see the answer key once they submit.
+              </span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Question Editor Section -->
+      <section
+        class="card section-block"
+        aria-labelledby="question-builder-heading"
+      >
+        <div class="section-header-row">
+          <h2 id="question-builder-heading" class="section-title">
+            2. Add a Question
+          </h2>
+          <span id="question-limit-pill" class="limit-pill">
+            <span id="question-count-num">0</span> / 10 questions
+          </span>
+        </div>
+
+        <!-- Question Type Selector -->
+        <div class="type-selector" role="tablist" aria-label="Question type">
+          <button
+            class="type-tab type-tab--active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            data-type="multipleChoice"
+          >
+            Multiple Choice (MCQ)
+          </button>
+          <button
+            class="type-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-type="trueFalse"
+          >
+            True / False
+          </button>
+          <button
+            class="type-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-type="writtenAnswer"
+          >
+            Written Answer
+          </button>
+        </div>
+
+        <!-- Question Title -->
+        <div class="field-group">
+          <label class="field-label" for="question-title">
+            Question text <span class="required-star">*</span>
+          </label>
+          <input
+            class="field-input"
+            id="question-title"
+            type="text"
+            placeholder="e.g. Which country has the most natural lakes?"
+            maxlength="2000"
+          />
+        </div>
+
+        <!-- Multiple Choice Options Container -->
+        <div id="mcq-options-container" class="options-box">
+          <div class="options-box__header">
+            <span class="options-box__title">Answer Choices (2 to 6)</span>
+            <span class="field-hint">
+              Select the radio button next to the correct choice (required).
+            </span>
+          </div>
+
+          <div id="choices-list" class="choices-list">
+            <!-- Dynamically populated choices -->
+          </div>
+
+          <button class="btn btn-subtle" type="button" id="add-choice-btn">
+            + Add choice
+          </button>
+        </div>
+
+        <!-- True / False Container -->
+        <div id="tf-options-container" class="options-box" hidden>
+          <div class="options-box__header">
+            <span class="options-box__title">Fixed Choices</span>
+            <span class="field-hint">Select which answer is correct</span>
+          </div>
+          <div class="tf-choices">
+            <label class="tf-choice-item">
+              <input type="radio" name="tf-correct" value="True" checked />
+              <span>True</span>
+            </label>
+            <label class="tf-choice-item">
+              <input type="radio" name="tf-correct" value="False" />
+              <span>False</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Written Answer Container -->
+        <div id="written-options-container" class="options-box" hidden>
+          <div class="options-box__header">
+            <span class="options-box__title">Written Response Preview</span>
+            <span class="field-hint">
+              Quiz takers will type their answer into a text area.
+            </span>
+          </div>
+          <div class="field-group">
+            <span class="field-label">
+              Accepted answers
+              <span class="field-optional">(leave empty to collect without auto-grading)</span>
+            </span>
+            <span class="field-hint">
+              Matching ignores capitalization and surrounding spaces. Add every
+              acceptable spelling.
+            </span>
+            <div id="accepted-answers-list" class="choices-list"></div>
+            <button
+              class="btn btn-subtle"
+              type="button"
+              id="add-accepted-answer-btn"
+            >
+              + Add accepted answer
+            </button>
+          </div>
+        </div>
+
+        <!-- Add Question Action Button -->
+        <div class="builder-actions">
+          <button class="btn btn--primary" type="button" id="add-question-btn">
+            ✦ Add and Save Question
+          </button>
+        </div>
+      </section>
+
+      <!-- Saved Questions List Section -->
+      <section
+        class="card section-block"
+        aria-labelledby="saved-questions-heading"
+      >
+        <div class="section-header-row">
+          <h2 id="saved-questions-heading" class="section-title">
+            3. Saved Questions
+          </h2>
+          <span id="saved-badge" class="counter-badge">0</span>
+        </div>
+
+        <div id="saved-questions-container" class="saved-questions-container">
+          <div class="empty-questions-prompt" id="empty-questions-prompt">
+            <p>
+              No questions added yet. Use the question builder above to add your
+              first question.
+            </p>
+          </div>
+          <div id="saved-questions-list" class="saved-questions-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Success Modal with Shareable Unique Link -->
+    <div id="success-modal" class="modal-backdrop" hidden>
+      <div
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
+        <div class="modal-header">
+          <div class="modal-icon" aria-hidden="true">🎉</div>
+          <h2 id="modal-title" class="modal-title">
+            Quiz Created Successfully!
+          </h2>
+          <p class="modal-subtitle">
+            Your quiz is ready. Share this unique link with anyone to let them
+            take it.
+          </p>
+        </div>
+
+        <div class="share-box">
+          <label class="field-label" for="share-link-input"
+            >Unique Quiz Link:</label
+          >
+          <div class="share-input-row">
+            <input
+              class="field-input"
+              id="share-link-input"
+              type="text"
+              readonly
+            />
+            <button
+              class="btn btn--primary"
+              type="button"
+              id="copy-modal-link-btn"
+            >
+              Copy link
+            </button>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <a class="btn" id="modal-take-link" href="#">Take quiz now</a>
+          <a class="btn" href="/">Go to overview</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

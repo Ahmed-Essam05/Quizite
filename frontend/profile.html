@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="View your Quizite profile information and change your password."
+    />
+    <title>Quizite — Profile</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/auth.css" />
+    <link rel="stylesheet" href="/profile.css" />
+    <script src="/profile.js" defer></script>
+  </head>
+  <body data-page="profile">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="auth-topbar">
+      <a class="brand" href="/" aria-label="Quizite home">
+        <span class="brand-mark" aria-hidden="true">Q</span>
+        <span class="brand-title">Quizite</span>
+      </a>
+      <div class="topbar-actions">
+        <a class="topbar-link" href="/">Back to dashboard</a>
+        <button
+          class="theme-toggle"
+          type="button"
+          data-theme-toggle
+          aria-label="Switch color theme"
+          title="Switch theme"
+        >
+          <span class="theme-toggle__sun" aria-hidden="true">&#9728;</span>
+          <span class="theme-toggle__moon" aria-hidden="true">&#9790;</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content" class="profile-main" tabindex="-1">
+      <div id="loading-state" class="profile-card profile-card--centered">
+        <p>Loading your profile…</p>
+      </div>
+
+      <div id="page-error" class="error-banner" role="alert" hidden></div>
+
+      <div id="profile-content" hidden>
+        <section class="profile-card" aria-labelledby="profile-title">
+          <div class="profile-header">
+            <span id="profile-avatar" class="profile-avatar" aria-hidden="true">Q</span>
+            <div class="profile-header__info">
+              <h1 id="profile-title" class="profile-username">Quizite user</h1>
+              <p class="profile-meta">
+                <span id="profile-email" class="profile-meta__item"></span>
+                <span id="profile-role" class="profile-role-badge" hidden></span>
+              </p>
+              <p id="profile-membersince" class="profile-meta profile-meta--muted"></p>
+            </div>
+          </div>
+
+          <div class="profile-stats" aria-label="Your quiz statistics">
+            <div class="stat-tile">
+              <span class="stat-tile__value" id="stat-quizzes">0</span>
+              <span class="stat-tile__label">Quizzes created</span>
+            </div>
+            <div class="stat-tile">
+              <span class="stat-tile__value" id="stat-published">0</span>
+              <span class="stat-tile__label">Published</span>
+            </div>
+            <div class="stat-tile">
+              <span class="stat-tile__value" id="stat-taken">0</span>
+              <span class="stat-tile__label">Quizzes taken</span>
+            </div>
+            <div class="stat-tile">
+              <span class="stat-tile__value" id="stat-attempts">0</span>
+              <span class="stat-tile__label">Attempts made</span>
+            </div>
+            <div class="stat-tile">
+              <span class="stat-tile__value" id="stat-liked">0</span>
+              <span class="stat-tile__label">Quizzes liked</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="profile-card" aria-labelledby="password-title">
+          <h2 id="password-title" class="profile-section-title">
+            Change password
+          </h2>
+          <p class="profile-section-hint">
+            After changing your password you stay signed in on this device.
+            Other sessions will be signed out.
+          </p>
+
+          <div id="password-error" class="error-banner" role="alert" hidden></div>
+
+          <form id="password-form" class="auth-form" novalidate>
+            <div class="field-group">
+              <label class="field-label" for="current-password"
+                >Current password</label
+              >
+              <input
+                class="field-input"
+                id="current-password"
+                name="currentPassword"
+                type="password"
+                autocomplete="current-password"
+                required
+                aria-required="true"
+              />
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="new-password">New password</label>
+              <input
+                class="field-input"
+                id="new-password"
+                name="newPassword"
+                type="password"
+                autocomplete="new-password"
+                required
+                aria-required="true"
+                aria-describedby="new-password-hint"
+              />
+              <span class="field-hint" id="new-password-hint">
+                At least 8 characters, including a letter and a number.
+              </span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="confirm-password"
+                >Confirm new password</label
+              >
+              <input
+                class="field-input"
+                id="confirm-password"
+                name="confirmPassword"
+                type="password"
+                autocomplete="new-password"
+                required
+                aria-required="true"
+              />
+            </div>
+
+            <button class="auth-submit" id="password-submit" type="submit">
+              <span class="submit-label">Update password</span>
+              <span class="submit-spinner" aria-hidden="true" hidden></span>
+            </button>
+          </form>
+        </section>
+      </div>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

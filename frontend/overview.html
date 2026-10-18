@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Quizite overview: your central dashboard for creating, managing, and tracking quizzes."
+    />
+    <title>Quizite — All your quizzes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/overview.css" />
+    <script src="/overview.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <div class="app-shell">
+      <!-- Left Sidebar Navigation -->
+      <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+        <div class="sidebar-header">
+          <a class="brand" href="/" aria-label="Quizite home">
+            <span class="brand-mark" aria-hidden="true">Q</span>
+            <span class="brand-title">Quizite</span>
+          </a>
+          <button
+            class="icon-button sidebar-close"
+            type="button"
+            data-sidebar-close
+            aria-label="Close navigation"
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Quiz sections">
+          <!-- Item 1: Create a quiz -->
+          <button
+            class="nav-item nav-item--primary"
+            type="button"
+            data-action="create"
+          >
+            <svg
+              class="nav-icon"
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"
+              ></path>
+            </svg>
+            <span>Create a quiz</span>
+          </button>
+
+          <!-- Item 2: All your quizzes -->
+          <button
+            class="nav-item nav-item--active"
+            type="button"
+            data-section="owned"
+            aria-current="page"
+          >
+            <svg
+              class="nav-icon"
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.6-1.2-1.6 1.2a.25.25 0 0 1-.4-.2Z"
+              ></path>
+            </svg>
+            <span>All your quizzes</span>
+          </button>
+
+          <!-- Item 3: Quizzes you have taken -->
+          <button class="nav-item" type="button" data-section="taken">
+            <svg
+              class="nav-icon"
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16Zm3.78-9.72a.751.751 0 0 0-.018-1.042.751.751 0 0 0-1.042-.018L6.75 9.19 5.28 7.72a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4.5-4.5Z"
+              ></path>
+            </svg>
+            <span>Quizzes you have taken</span>
+            <span class="badge-pill" id="taken-badge" hidden></span>
+          </button>
+        </nav>
+      </aside>
+
+      <!-- Sidebar scrim for mobile drawer -->
+      <div class="sidebar-scrim" data-sidebar-close aria-hidden="true"></div>
+
+      <!-- Main Workspace -->
+      <div class="workspace">
+        <!-- Top bar with mobile hamburger and account area -->
+        <header class="topbar">
+          <button
+            class="icon-button menu-button"
+            type="button"
+            data-sidebar-open
+            aria-label="Open navigation"
+            aria-controls="sidebar"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+
+          <div class="topbar-actions">
+            <!-- Theme Toggle -->
+            <button
+              class="theme-toggle"
+              type="button"
+              data-theme-toggle
+              aria-label="Switch color theme"
+              title="Switch theme"
+            >
+              <span class="theme-toggle__sun" aria-hidden="true">☀</span>
+              <span class="theme-toggle__moon" aria-hidden="true">☾</span>
+            </button>
+
+            <!-- Top-right Account Area -->
+            <div id="account-area"></div>
+          </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main id="main-content" tabindex="-1">
+          <div id="page-content"></div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
