@@ -9,6 +9,7 @@ import {
 } from "vitest";
 
 import app from "../app.js";
+import Quiz from "../model/quizModel.js";
 import QuizAttempt from "../model/quizAttemptModel.js";
 import User from "../model/userModel.js";
 import { clearTestDB, connectTestDB, disconnectTestDB } from "./helpers/db.js";
@@ -114,7 +115,7 @@ describe("Quiz API", () => {
       expect(response.status).toBe(400);
     });
 
-    it("rejects pages with more than 10 questions", async () => {
+    it("automatically groups flat questions into pages of 10", async () => {
       const questions = Array.from({ length: 11 }, (_, index) =>
         buildMcqQuestion({ title: `Question ${index}` }),
       );
@@ -123,7 +124,59 @@ describe("Quiz API", () => {
         .post("/api/quizzes")
         .send({ title: "Quiz", questions });
 
+      expect(response.status).toBe(201);
+      expect(response.body.data.quiz.questionCount).toBe(11);
+
+      const quiz = await fetchQuiz(alice, response.body.data.quiz.id);
+      expect(quiz.pages).toHaveLength(2);
+      expect(quiz.pages[0].questions).toHaveLength(10);
+      expect(quiz.pages[1].questions).toHaveLength(1);
+    });
+
+    it("rejects explicit pages with more than 10 questions", async () => {
+      const questions = Array.from({ length: 11 }, (_, index) =>
+        buildMcqQuestion({ title: `Question ${index}` }),
+      );
+
+      const response = await alice.post("/api/quizzes").send({
+        title: "Quiz",
+        pages: [{ title: "Page 1", questions }],
+      });
+
       expect(response.status).toBe(400);
+    });
+
+    it("enforces the 80-question and 8-page limits", async () => {
+      const buildQuestions = (length) =>
+        Array.from({ length }, (_, index) =>
+          buildMcqQuestion({ title: `Question ${index}` }),
+        );
+
+      const atLimit = await alice
+        .post("/api/quizzes")
+        .send({ title: "Quiz", questions: buildQuestions(80) });
+
+      expect(atLimit.status).toBe(201);
+      expect(atLimit.body.data.quiz.questionCount).toBe(80);
+
+      const atLimitQuiz = await fetchQuiz(alice, atLimit.body.data.quiz.id);
+      expect(atLimitQuiz.pages).toHaveLength(8);
+
+      const overQuestionLimit = await alice
+        .post("/api/quizzes")
+        .send({ title: "Quiz", questions: buildQuestions(81) });
+
+      expect(overQuestionLimit.status).toBe(400);
+
+      const tooManyPages = await alice.post("/api/quizzes").send({
+        title: "Quiz",
+        pages: Array.from({ length: 9 }, (_, index) => ({
+          title: `Page ${index + 1}`,
+          questions: [buildMcqQuestion()],
+        })),
+      });
+
+      expect(tooManyPages.status).toBe(400);
     });
 
     it("rejects multiple-choice questions with invalid choice counts", async () => {
@@ -341,6 +394,32 @@ describe("Quiz API", () => {
 
       const quiz = await fetchQuiz(alice, quizId);
       expect(quiz.questionCount).toBe(1);
+    });
+
+    it("auto-groups updated flat questions and enforces limits", async () => {
+      const created = await createQuizViaApi(alice, { status: "draft" });
+      const quizId = created.body.data.quiz.id;
+      const buildQuestions = (length) =>
+        Array.from({ length }, (_, index) =>
+          buildMcqQuestion({ title: `Question ${index}` }),
+        );
+
+      const updated = await alice
+        .patch(`/api/quizzes/${quizId}`)
+        .send({ questions: buildQuestions(11) });
+
+      expect(updated.status).toBe(200);
+
+      const quiz = await fetchQuiz(alice, quizId);
+      expect(quiz.pages).toHaveLength(2);
+      expect(quiz.pages[0].questions).toHaveLength(10);
+      expect(quiz.pages[1].questions).toHaveLength(1);
+
+      const overLimit = await alice
+        .patch(`/api/quizzes/${quizId}`)
+        .send({ questions: buildQuestions(81) });
+
+      expect(overLimit.status).toBe(400);
     });
 
     it("rejects malformed questions without wiping existing content", async () => {
@@ -679,6 +758,171 @@ describe("Quiz API", () => {
         "/api/quizzes/0123456789abcdef01234567/like",
       );
       expect(missing.status).toBe(404);
+    });
+
+    it("allows multiple users to like the same quiz and one user to like many quizzes", async () => {
+      const first = await createQuizViaApi(alice, { title: "First" });
+      const second = await createQuizViaApi(alice, { title: "Second" });
+      const firstId = first.body.data.quiz.id;
+      const secondId = second.body.data.quiz.id;
+
+      expect((await bob.post(`/api/quizzes/${firstId}/like`)).status).toBe(200);
+      expect((await bob.post(`/api/quizzes/${secondId}/like`)).status).toBe(
+        200,
+      );
+      expect((await alice.post(`/api/quizzes/${firstId}/like`)).status).toBe(
+        200,
+      );
+
+      const stored = await Quiz.findById(firstId).lean();
+      expect(stored.likes).toHaveLength(2);
+      expect(new Set(stored.likes.map(String)).size).toBe(2);
+      expect(stored.likeCount).toBe(2);
+
+      const liked = await bob.get("/api/users/me/liked");
+      expect(liked.status).toBe(200);
+      expect(liked.body.results).toBe(2);
+      expect(liked.body.data.quizzes.map((quiz) => quiz.id).sort()).toEqual(
+        [firstId, secondId].sort(),
+      );
+      expect(
+        liked.body.data.quizzes.every(
+          (quiz) => quiz.likedByMe && quiz.likeCount >= 1,
+        ),
+      ).toBe(true);
+    });
+
+    it("keeps likeCount consistent with unique likes under repeated clicks", async () => {
+      const created = await createQuizViaApi(alice);
+      const quizId = created.body.data.quiz.id;
+
+      await Promise.all([
+        bob.post(`/api/quizzes/${quizId}/like`),
+        bob.post(`/api/quizzes/${quizId}/like`),
+        bob.post(`/api/quizzes/${quizId}/like`),
+      ]);
+
+      const liked = await Quiz.findById(quizId).lean();
+      expect(liked.likes).toHaveLength(1);
+      expect(liked.likeCount).toBe(1);
+
+      await alice.post(`/api/quizzes/${quizId}/like`);
+      expect((await Quiz.findById(quizId).lean()).likeCount).toBe(2);
+
+      await Promise.all([
+        bob.delete(`/api/quizzes/${quizId}/like`),
+        bob.delete(`/api/quizzes/${quizId}/like`),
+      ]);
+
+      const unliked = await Quiz.findById(quizId).lean();
+      expect(unliked.likes).toHaveLength(1);
+      expect(unliked.likeCount).toBe(1);
+    });
+
+    it("exposes like state on the completed quiz history", async () => {
+      const created = await createQuizViaApi(alice);
+      const quizId = created.body.data.quiz.id;
+      const quiz = await fetchQuiz(bob, quizId);
+
+      await bob.post(`/api/quizzes/${quizId}/submit`).send(buildAnswers(quiz));
+      await bob.post(`/api/quizzes/${quizId}/like`);
+
+      const completed = await bob.get("/api/users/me/completed");
+      expect(completed.body.data.quizzes[0].likeCount).toBe(1);
+      expect(completed.body.data.quizzes[0].likedByMe).toBe(true);
+
+      await bob.delete(`/api/quizzes/${quizId}/like`);
+      const afterUnlike = await bob.get("/api/users/me/completed");
+      expect(afterUnlike.body.data.quizzes[0].likeCount).toBe(0);
+      expect(afterUnlike.body.data.quizzes[0].likedByMe).toBe(false);
+    });
+
+    it("requires authentication to read liked quizzes", async () => {
+      const response = await request(server).get("/api/users/me/liked");
+      expect(response.status).toBe(401);
+    });
+
+    it("paginates a user's liked quizzes", async () => {
+      for (let index = 0; index < 3; index += 1) {
+        const created = await createQuizViaApi(alice, {
+          title: `Liked quiz ${index}`,
+        });
+        await bob.post(`/api/quizzes/${created.body.data.quiz.id}/like`);
+      }
+
+      const firstPage = await bob.get("/api/users/me/liked?page=1&limit=2");
+      expect(firstPage.status).toBe(200);
+      expect(firstPage.body.data.quizzes).toHaveLength(2);
+      expect(firstPage.body.meta.total).toBe(3);
+      expect(firstPage.body.meta.totalPages).toBe(2);
+      expect(firstPage.body.meta.hasNextPage).toBe(true);
+
+      const secondPage = await bob.get("/api/users/me/liked?page=2&limit=2");
+      expect(secondPage.body.data.quizzes).toHaveLength(1);
+      expect(secondPage.body.meta.hasPrevPage).toBe(true);
+      expect(secondPage.body.meta.hasNextPage).toBe(false);
+    });
+
+    it("does not expose liked drafts owned by other users", async () => {
+      const created = await createQuizViaApi(alice);
+      const quizId = created.body.data.quiz.id;
+
+      await bob.post(`/api/quizzes/${quizId}/like`);
+      await alice.post(`/api/quizzes/${quizId}/like`);
+      await alice.patch(`/api/quizzes/${quizId}`).send({ status: "draft" });
+
+      const bobLiked = await bob.get("/api/users/me/liked");
+      expect(bobLiked.body.meta.total).toBe(0);
+      expect(bobLiked.body.data.quizzes).toHaveLength(0);
+
+      const aliceLiked = await alice.get("/api/users/me/liked");
+      expect(aliceLiked.body.meta.total).toBe(1);
+      expect(aliceLiked.body.data.quizzes[0].id).toBe(quizId);
+
+      const bobMe = await bob.get("/api/users/me");
+      expect(bobMe.body.data.stats.likedCount).toBe(0);
+      const aliceMe = await alice.get("/api/users/me");
+      expect(aliceMe.body.data.stats.likedCount).toBe(1);
+    });
+
+    it("handles liked quizzes that are later deleted safely", async () => {
+      const created = await createQuizViaApi(alice);
+      const quizId = created.body.data.quiz.id;
+
+      await bob.post(`/api/quizzes/${quizId}/like`);
+      expect((await alice.delete(`/api/quizzes/${quizId}`)).status).toBe(204);
+
+      const liked = await bob.get("/api/users/me/liked");
+      expect(liked.body.meta.total).toBe(0);
+      expect(liked.body.data.quizzes).toHaveLength(0);
+
+      expect((await bob.post(`/api/quizzes/${quizId}/like`)).status).toBe(404);
+      expect((await bob.delete(`/api/quizzes/${quizId}/like`)).status).toBe(
+        404,
+      );
+    });
+
+    it("exposes like state and an accurate liked total on the overview", async () => {
+      const first = await createQuizViaApi(alice, { title: "First" });
+      const second = await createQuizViaApi(alice, { title: "Second" });
+      const firstId = first.body.data.quiz.id;
+
+      await alice.post(`/api/quizzes/${firstId}/like`);
+
+      const overview = await alice.get("/api/overview");
+      expect(overview.status).toBe(200);
+      expect(overview.body.data.likedQuizCount).toBe(1);
+
+      const firstCard = overview.body.data.quizzes.find(
+        (quiz) => quiz.id === firstId,
+      );
+      const secondCard = overview.body.data.quizzes.find(
+        (quiz) => quiz.id === second.body.data.quiz.id,
+      );
+      expect(firstCard.likeCount).toBe(1);
+      expect(firstCard.likedByMe).toBe(true);
+      expect(secondCard.likeCount).toBe(0);
+      expect(secondCard.likedByMe).toBe(false);
     });
   });
 

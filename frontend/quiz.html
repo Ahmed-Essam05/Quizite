@@ -16,6 +16,7 @@
     />
     <link rel="stylesheet" href="/overview.css" />
     <link rel="stylesheet" href="/quiz.css" />
+    <script src="/quizResultStore.js" defer></script>
     <script src="/quiz.js" defer></script>
   </head>
   <body>
@@ -118,6 +119,25 @@
         <form id="quiz-take-form" class="quiz-questions-form" novalidate>
           <div id="questions-render-area" class="questions-render-area"></div>
 
+          <nav
+            id="quiz-page-nav"
+            class="quiz-page-nav"
+            aria-label="Quiz page navigation"
+            hidden
+          >
+            <button class="btn" type="button" id="prev-page-btn">
+              ← Previous
+            </button>
+            <span
+              id="quiz-page-indicator"
+              class="quiz-page-indicator"
+              aria-live="polite"
+            ></span>
+            <button class="btn" type="button" id="next-page-btn">
+              Next →
+            </button>
+          </nav>
+
           <div class="quiz-form-footer">
             <button
               class="btn btn--primary btn-large"
@@ -128,53 +148,6 @@
             </button>
           </div>
         </form>
-
-        <!-- Results Card (displayed after submission) -->
-        <section
-          id="results-card"
-          class="results-card"
-          hidden
-          aria-live="polite"
-        >
-          <div class="results-card__header">
-            <span class="results-score-badge" id="results-badge">100%</span>
-            <h2 class="results-title" id="results-title">Quiz Completed!</h2>
-            <p class="results-score-text">
-              You scored <strong id="results-score-count">0</strong> out of
-              <strong id="results-total-count">0</strong> questions (<span
-                id="results-percentage"
-                >0%</span
-              >).
-            </p>
-          </div>
-
-          <!-- Question-by-Question Review -->
-          <div class="results-review">
-            <h3 class="results-review__heading">Detailed Review</h3>
-            <p id="results-ungraded-note" class="results-ungraded-note" hidden>
-              Some written answers were collected but not auto-graded because the
-              creator did not provide accepted answers for them.
-            </p>
-            <div
-              id="results-breakdown-list"
-              class="results-breakdown-list"
-            ></div>
-          </div>
-
-          <div class="results-actions">
-            <button class="btn" type="button" id="retake-btn">
-              Retake quiz
-            </button>
-            <button
-              class="btn btn--primary"
-              type="button"
-              id="share-result-btn"
-            >
-              Share this quiz
-            </button>
-            <a class="btn" href="/">Return to overview</a>
-          </div>
-        </section>
       </div>
     </main>
 

@@ -10,6 +10,26 @@ import { sendToken, validatePassword } from "./authController.js";
 const countQuestions = (pages = []) =>
   pages.reduce((total, page) => total + (page.questions || []).length, 0);
 
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 50;
+
+const parsePositiveInteger = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return parsed;
+};
+
+// Likes are stored only on the quiz document, so a deleted quiz automatically
+// disappears from every user's liked list. Drafts owned by other users must
+// never leak through this query; admins retain their existing draft access.
+const buildVisibleLikedFilter = (user) => {
+  const filter = { likes: user._id };
+  if (user.role !== "admin") {
+    filter.$or = [{ status: "published" }, { owner: user._id }];
+  }
+  return filter;
+};
+
 export const getMe = catchAsync(async (req, res) => {
   const userId = req.user._id;
 
@@ -22,7 +42,7 @@ export const getMe = catchAsync(async (req, res) => {
     Quiz.countDocuments({ owner: userId }),
     Quiz.countDocuments({ owner: userId, status: "published" }),
     QuizAttempt.countDocuments({ user: userId }),
-    Quiz.countDocuments({ likes: userId }),
+    Quiz.countDocuments(buildVisibleLikedFilter(req.user)),
   ]);
 
   return res.status(200).json({
@@ -49,7 +69,7 @@ export const getMe = catchAsync(async (req, res) => {
 export const getCompletedQuizzes = catchAsync(async (req, res) => {
   const user = await User.findById(req.user._id).populate({
     path: "completedQuizzes",
-    select: "title description status pages updatedAt",
+    select: "title description status pages likeCount likes updatedAt",
   });
 
   const quizzes = (user.completedQuizzes || []).filter(Boolean);
@@ -80,6 +100,10 @@ export const getCompletedQuizzes = catchAsync(async (req, res) => {
         description: quiz.description || "",
         status: quiz.status,
         questionCount: countQuestions(quiz.pages),
+        likeCount: quiz.likeCount || 0,
+        likedByMe: (quiz.likes || []).some((userId) =>
+          userId.equals(req.user._id),
+        ),
         attempts: stats.attempts || 0,
         lastPercentage: stats.lastPercentage ?? null,
         lastCompletedAt: stats.lastCompletedAt || null,
@@ -96,6 +120,59 @@ export const getCompletedQuizzes = catchAsync(async (req, res) => {
     results: completed.length,
     data: {
       quizzes: completed,
+    },
+  });
+});
+
+export const getLikedQuizzes = catchAsync(async (req, res) => {
+  const page = parsePositiveInteger(req.query.page, 1);
+  const limit = Math.min(
+    parsePositiveInteger(req.query.limit, DEFAULT_LIMIT),
+    MAX_LIMIT,
+  );
+  const filter = buildVisibleLikedFilter(req.user);
+
+  const [total, quizzes] = await Promise.all([
+    Quiz.countDocuments(filter),
+    Quiz.find(filter)
+      .select("title description status pages likeCount owner updatedAt")
+      .populate("owner", "username")
+      .sort({ updatedAt: -1, _id: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+  ]);
+
+  const likedQuizzes = quizzes.map((quiz) => ({
+    id: quiz._id,
+    title: quiz.title,
+    description: quiz.description || "",
+    status: quiz.status,
+    questionCount: countQuestions(quiz.pages),
+    likeCount: quiz.likeCount || 0,
+    likedByMe: true,
+    owner: {
+      username: quiz.owner?.username || "Anonymous",
+    },
+    updatedAt: quiz.updatedAt,
+    shareUrl: `/quiz/${quiz._id}`,
+  }));
+
+  const totalPages = Math.max(Math.ceil(total / limit), 1);
+
+  return res.status(200).json({
+    status: "success",
+    results: likedQuizzes.length,
+    data: {
+      quizzes: likedQuizzes,
+    },
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
     },
   });
 });

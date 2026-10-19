@@ -74,6 +74,10 @@ app.get("/quiz/:id/edit", protectPage, (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "create.html"));
 });
 
+app.get("/quiz/:id/results", (req, res) => {
+  res.sendFile(path.join(__dirname, "frontend", "results.html"));
+});
+
 app.get("/quiz/:id", (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "quiz.html"));
 });

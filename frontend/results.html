@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="View your Quizite quiz results." />
+    <title>Quizite — Quiz results</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/overview.css" />
+    <link rel="stylesheet" href="/quiz.css" />
+    <link rel="stylesheet" href="/results.css" />
+    <script src="/quizResultStore.js" defer></script>
+    <script src="/results.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to results</a>
+
+    <header class="topbar quiz-topbar">
+      <div class="quiz-topbar__left">
+        <a class="brand" href="/" aria-label="Quizite home">
+          <span class="brand-mark" aria-hidden="true">Q</span>
+          <span class="brand-title">Quizite</span>
+        </a>
+      </div>
+
+      <div class="topbar-actions">
+        <button
+          class="theme-toggle"
+          type="button"
+          data-theme-toggle
+          aria-label="Switch color theme"
+          title="Switch theme"
+        >
+          <span class="theme-toggle__sun" aria-hidden="true">☀</span>
+          <span class="theme-toggle__moon" aria-hidden="true">☾</span>
+        </button>
+
+        <a class="btn" href="/">Overview</a>
+      </div>
+    </header>
+
+    <main id="main-content" class="quiz-main results-main" tabindex="-1">
+      <div id="results-error" class="quiz-error-card" hidden>
+        <h2>Results Unavailable</h2>
+        <p id="results-error-msg">
+          These results are no longer available. Please take the quiz again.
+        </p>
+        <div class="results-actions">
+          <a class="btn" id="error-quiz-link" href="/">Back to quiz</a>
+          <a class="btn btn--primary" href="/">Return to overview</a>
+        </div>
+      </div>
+
+      <div id="results-container" hidden>
+        <header class="results-page-heading">
+          <p class="results-eyebrow">Quiz Results</p>
+          <h1 id="results-quiz-title" class="results-page-title"></h1>
+        </header>
+
+        <section class="results-card" aria-live="polite">
+          <div class="results-card__header">
+            <span class="results-score-badge" id="results-badge">0%</span>
+            <h2 class="results-title" id="results-title">Quiz Completed!</h2>
+            <p class="results-score-text">
+              You answered <strong id="results-score-count">0</strong> out of
+              <strong id="results-total-count">0</strong> graded questions
+              correctly (<span id="results-percentage">0%</span>).
+            </p>
+            <p id="results-total-questions" class="results-total-note"></p>
+          </div>
+
+          <div class="results-review">
+            <h3 class="results-review__heading">Detailed Review</h3>
+            <p id="results-ungraded-note" class="results-ungraded-note" hidden>
+              Some written answers were collected but not auto-graded because
+              the creator did not provide accepted answers for them.
+            </p>
+            <div
+              id="results-breakdown-list"
+              class="results-breakdown-list"
+            ></div>
+          </div>
+
+          <div class="results-actions">
+            <a class="btn btn--primary" id="return-to-quiz-link" href="/">
+              Back to quiz
+            </a>
+            <a class="btn" href="/">Return to overview</a>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

@@ -5,6 +5,8 @@
 const STORAGE_KEY = "quizite-quiz-draft";
 const THEME_KEY = "quizite-theme";
 const MAX_QUESTIONS_PER_PAGE = 10;
+const MAX_TOTAL_QUESTIONS = 80;
+const MAX_PAGES = 8;
 const MAX_ACCEPTED_ANSWERS = 20;
 
 const editMatch = window.location.pathname.match(/^\/quiz\/([^/]+)\/edit\/?$/);
@@ -379,15 +381,80 @@ addAcceptedAnswerBtn?.addEventListener("click", () => {
    Saved Questions List Rendering
    -------------------------------------------------------------------------- */
 
+const renderQuestionCard = (q, idx) => {
+  let typeLabel = "Multiple Choice";
+  if (q.type === "trueFalse") typeLabel = "True / False";
+  if (q.type === "writtenAnswer") typeLabel = "Written Answer";
+
+  let detailsHtml = "";
+  if (q.type === "multipleChoice" || q.type === "trueFalse") {
+    detailsHtml = `
+      <div class="question-card-item__choices">
+        ${(q.choices || [])
+          .map((c, cIdx) => {
+            const isCorrect =
+              cIdx === q.correctChoiceIndex || c.text === q.correctAnswer;
+            return `
+            <div class="choice-preview-item ${isCorrect ? "is-correct" : ""}">
+              <span>${isCorrect ? "●" : "○"}</span>
+              <span>${escapeHtml(c.text || c)}</span>
+              ${isCorrect ? `<span class="correct-indicator">(Correct)</span>` : ""}
+            </div>`;
+          })
+          .join("")}
+      </div>`;
+  } else if (q.type === "writtenAnswer") {
+    const accepted = (
+      Array.isArray(q.acceptedAnswers)
+        ? q.acceptedAnswers
+        : q.correctText
+          ? [q.correctText]
+          : []
+    ).filter((answer) => String(answer).trim().length > 0);
+
+    detailsHtml = `
+      <div class="question-card-item__choices">
+        <span class="field-hint">
+          ${
+            accepted.length
+              ? `Accepted answers: <strong>${accepted.map((a) => escapeHtml(a)).join(", ")}</strong>`
+              : "Open response (answers will not be auto-graded)"
+          }
+        </span>
+      </div>`;
+  }
+
+  return `
+  <article class="question-card-item" data-question-index="${idx}">
+    <div class="question-card-item__top">
+      <div class="question-card-item__meta">
+        <span class="question-num">Q${idx + 1}</span>
+        <span class="badge-pill">${typeLabel}</span>
+      </div>
+      <button
+        class="btn-remove-choice"
+        type="button"
+        data-delete-question="${idx}"
+        title="Delete this question"
+        aria-label="Delete question ${idx + 1}"
+      >
+        🗑
+      </button>
+    </div>
+    <p class="question-card-item__text">${escapeHtml(q.title)}</p>
+    ${detailsHtml}
+  </article>`;
+};
+
 const renderSavedQuestions = () => {
   const count = quizState.questions.length;
   savedBadge.textContent = String(count);
   questionCountNum.textContent = String(count);
 
-  if (count >= MAX_QUESTIONS_PER_PAGE) {
+  if (count >= MAX_TOTAL_QUESTIONS) {
     questionLimitPill.classList.add("limit-pill--full");
     addQuestionBtn.disabled = true;
-    addQuestionBtn.textContent = "Maximum 10 questions reached";
+    addQuestionBtn.textContent = `Maximum ${MAX_TOTAL_QUESTIONS} questions reached`;
   } else {
     questionLimitPill.classList.remove("limit-pill--full");
     addQuestionBtn.disabled = false;
@@ -402,72 +469,41 @@ const renderSavedQuestions = () => {
 
   emptyQuestionsPrompt.hidden = true;
 
-  savedQuestionsList.innerHTML = quizState.questions
-    .map((q, idx) => {
-      let typeLabel = "Multiple Choice";
-      if (q.type === "trueFalse") typeLabel = "True / False";
-      if (q.type === "writtenAnswer") typeLabel = "Written Answer";
+  const pageCount = Math.ceil(count / MAX_QUESTIONS_PER_PAGE);
+  const groups = [];
 
-      let detailsHtml = "";
-      if (q.type === "multipleChoice" || q.type === "trueFalse") {
-        detailsHtml = `
-          <div class="question-card-item__choices">
-            ${(q.choices || [])
-              .map((c, cIdx) => {
-                const isCorrect =
-                  cIdx === q.correctChoiceIndex || c.text === q.correctAnswer;
-                return `
-                <div class="choice-preview-item ${isCorrect ? "is-correct" : ""}">
-                  <span>${isCorrect ? "●" : "○"}</span>
-                  <span>${escapeHtml(c.text || c)}</span>
-                  ${isCorrect ? `<span class="correct-indicator">(Correct)</span>` : ""}
-                </div>`;
-              })
-              .join("")}
-          </div>`;
-      } else if (q.type === "writtenAnswer") {
-        const accepted = (
-          Array.isArray(q.acceptedAnswers)
-            ? q.acceptedAnswers
-            : q.correctText
-              ? [q.correctText]
-              : []
-        ).filter((answer) => String(answer).trim().length > 0);
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+    const startIndex = pageIndex * MAX_QUESTIONS_PER_PAGE;
+    const pageQuestions = quizState.questions.slice(
+      startIndex,
+      startIndex + MAX_QUESTIONS_PER_PAGE,
+    );
+    const startNumber = startIndex + 1;
+    const endNumber = startIndex + pageQuestions.length;
+    const rangeLabel =
+      startNumber === endNumber
+        ? `Question ${startNumber}`
+        : `Questions ${startNumber}–${endNumber}`;
 
-        detailsHtml = `
-          <div class="question-card-item__choices">
-            <span class="field-hint">
-              ${
-                accepted.length
-                  ? `Accepted answers: <strong>${accepted.map((a) => escapeHtml(a)).join(", ")}</strong>`
-                  : "Open response (answers will not be auto-graded)"
-              }
-            </span>
-          </div>`;
-      }
-
-      return `
-      <article class="question-card-item" data-question-index="${idx}">
-        <div class="question-card-item__top">
-          <div class="question-card-item__meta">
-            <span class="question-num">Q${idx + 1}</span>
-            <span class="badge-pill">${typeLabel}</span>
-          </div>
-          <button
-            class="btn-remove-choice"
-            type="button"
-            data-delete-question="${idx}"
-            title="Delete this question"
-            aria-label="Delete question ${idx + 1}"
-          >
-            🗑
-          </button>
+    groups.push(`
+      <section class="builder-page-group" aria-labelledby="builder-page-${pageIndex + 1}">
+        <div class="builder-page-group__header">
+          <h3 class="builder-page-group__title" id="builder-page-${pageIndex + 1}">
+            Page ${pageIndex + 1}
+          </h3>
+          <span class="builder-page-group__range">${rangeLabel}</span>
         </div>
-        <p class="question-card-item__text">${escapeHtml(q.title)}</p>
-        ${detailsHtml}
-      </article>`;
-    })
-    .join("");
+        <div class="builder-page-group__questions">
+          ${pageQuestions
+            .map((question, offset) =>
+              renderQuestionCard(question, startIndex + offset),
+            )
+            .join("")}
+        </div>
+      </section>`);
+  }
+
+  savedQuestionsList.innerHTML = groups.join("");
 };
 
 savedQuestionsList.addEventListener("click", (e) => {
@@ -488,8 +524,10 @@ savedQuestionsList.addEventListener("click", (e) => {
 addQuestionBtn.addEventListener("click", () => {
   clearError();
 
-  if (quizState.questions.length >= MAX_QUESTIONS_PER_PAGE) {
-    showError("A quiz page cannot contain more than 10 questions.");
+  if (quizState.questions.length >= MAX_TOTAL_QUESTIONS) {
+    showError(
+      `A quiz cannot contain more than ${MAX_TOTAL_QUESTIONS} questions across ${MAX_PAGES} pages.`,
+    );
     return;
   }
 
@@ -554,6 +592,8 @@ addQuestionBtn.addEventListener("click", () => {
   }
 
   if (newQuestion) {
+    const assignedPage =
+      Math.floor(quizState.questions.length / MAX_QUESTIONS_PER_PAGE) + 1;
     quizState.questions.push(newQuestion);
     renderSavedQuestions();
     saveDraftToStorage();
@@ -565,7 +605,7 @@ addQuestionBtn.addEventListener("click", () => {
     mcqChoices = ["", ""];
     mcqCorrectIndex = 0;
     renderMcqChoices();
-    showToast("Question saved to quiz.");
+    showToast(`Question saved to Page ${assignedPage}.`);
     questionTitleInput.focus();
   }
 });

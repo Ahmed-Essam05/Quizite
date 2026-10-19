@@ -148,6 +148,16 @@ describe("Quiz model validation", () => {
     await expect(quiz.validate()).rejects.toThrow(/more than 10 questions/);
   });
 
+  it("rejects more than 8 pages", async () => {
+    const quiz = buildQuiz([], {
+      pages: Array.from({ length: 9 }, (_, index) => ({
+        title: `Page ${index + 1}`,
+        questions: [mcqQuestion()],
+      })),
+    });
+    await expect(quiz.validate()).rejects.toThrow(/more than 8 pages/);
+  });
+
   it("rejects an empty title", async () => {
     const quiz = new Quiz({ title: "   ", owner: ownerId });
     await expect(quiz.validate()).rejects.toThrow(/title is required/);

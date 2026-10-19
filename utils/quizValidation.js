@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import AppError from "./appError.js";
 
 export const MAX_QUESTIONS_PER_PAGE = 10;
+export const MAX_TOTAL_QUESTIONS = 80;
+export const MAX_PAGES = 8;
 export const MIN_CHOICES_PER_QUESTION = 2;
 export const MAX_CHOICES_PER_QUESTION = 6;
 export const MAX_ACCEPTED_ANSWERS = 20;
@@ -378,14 +380,51 @@ export const parsePages = (rawPages, rawQuestions) => {
     if (!Array.isArray(rawPages)) {
       fail("pages must be an array");
     }
-    return rawPages.map((page, index) => parsePage(page, index, seenIds));
+    if (rawPages.length > MAX_PAGES) {
+      fail(`A quiz cannot contain more than ${MAX_PAGES} pages`);
+    }
+
+    const pages = rawPages.map((page, index) =>
+      parsePage(page, index, seenIds),
+    );
+
+    if (countQuestions(pages) > MAX_TOTAL_QUESTIONS) {
+      fail(`A quiz cannot contain more than ${MAX_TOTAL_QUESTIONS} questions`);
+    }
+
+    return pages;
   }
 
   if (rawQuestions !== undefined) {
     if (!Array.isArray(rawQuestions)) {
       fail("questions must be an array");
     }
-    return [parsePage({ title: "Page 1", questions: rawQuestions }, 0, seenIds)];
+    if (rawQuestions.length > MAX_TOTAL_QUESTIONS) {
+      fail(`A quiz cannot contain more than ${MAX_TOTAL_QUESTIONS} questions`);
+    }
+
+    const pages = [];
+    for (
+      let index = 0;
+      index < rawQuestions.length;
+      index += MAX_QUESTIONS_PER_PAGE
+    ) {
+      pages.push(
+        parsePage(
+          {
+            title: `Page ${pages.length + 1}`,
+            questions: rawQuestions.slice(
+              index,
+              index + MAX_QUESTIONS_PER_PAGE,
+            ),
+          },
+          pages.length,
+          seenIds,
+        ),
+      );
+    }
+
+    return pages;
   }
 
   return [];

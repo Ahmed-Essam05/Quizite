@@ -583,6 +583,22 @@ export const submitQuiz = catchAsync(async (req, res, next) => {
   });
 });
 
+// The likes array is the source of truth. If a legacy document has drifted,
+// repair the denormalized counter without overwriting a newer concurrent update.
+const resolveLikeCount = async (quiz) => {
+  const likes = quiz.likes || [];
+  const likeCount = likes.length;
+
+  if ((quiz.likeCount || 0) !== likeCount) {
+    await Quiz.updateOne(
+      { _id: quiz._id, likes: { $size: likeCount } },
+      { $set: { likeCount } },
+    );
+  }
+
+  return likeCount;
+};
+
 export const likeQuiz = catchAsync(async (req, res, next) => {
   if (!ensureQuizId(req, next)) return undefined;
 
@@ -596,17 +612,19 @@ export const likeQuiz = catchAsync(async (req, res, next) => {
       $addToSet: { likes: req.user._id },
       $inc: { likeCount: 1 },
     },
-    { new: true, select: "likeCount" },
+    { new: true, select: "likes likeCount" },
   );
 
   if (quiz) {
     return res.status(200).json({
       status: "success",
-      data: { likeCount: quiz.likeCount || 0, liked: true },
+      data: { likeCount: await resolveLikeCount(quiz), liked: true },
     });
   }
 
-  const existing = await Quiz.findById(req.params.id).select("status likeCount");
+  const existing = await Quiz.findById(req.params.id).select(
+    "status likes likeCount",
+  );
 
   if (!existing) {
     return next(new AppError("No quiz found with that ID", 404));
@@ -619,7 +637,7 @@ export const likeQuiz = catchAsync(async (req, res, next) => {
   // The user already liked this quiz; liking is idempotent.
   return res.status(200).json({
     status: "success",
-    data: { likeCount: existing.likeCount || 0, liked: true },
+    data: { likeCount: await resolveLikeCount(existing), liked: true },
   });
 });
 
@@ -635,17 +653,19 @@ export const unlikeQuiz = catchAsync(async (req, res, next) => {
       $pull: { likes: req.user._id },
       $inc: { likeCount: -1 },
     },
-    { new: true, select: "likeCount" },
+    { new: true, select: "likes likeCount" },
   );
 
   if (quiz) {
     return res.status(200).json({
       status: "success",
-      data: { likeCount: Math.max(quiz.likeCount || 0, 0), liked: false },
+      data: { likeCount: await resolveLikeCount(quiz), liked: false },
     });
   }
 
-  const existing = await Quiz.findById(req.params.id).select("likeCount");
+  const existing = await Quiz.findById(req.params.id).select(
+    "likes likeCount",
+  );
 
   if (!existing) {
     return next(new AppError("No quiz found with that ID", 404));
@@ -654,6 +674,6 @@ export const unlikeQuiz = catchAsync(async (req, res, next) => {
   // The user had not liked this quiz; unliking is idempotent.
   return res.status(200).json({
     status: "success",
-    data: { likeCount: Math.max(existing.likeCount || 0, 0), liked: false },
+    data: { likeCount: await resolveLikeCount(existing), liked: false },
   });
 });

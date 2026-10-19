@@ -18,15 +18,23 @@ export const getOverview = catchAsync(async (req, res) => {
   );
 
   const filter = { owner: req.user._id };
+  const likedFilter = {
+    likes: req.user._id,
+    $or: [{ status: "published" }, { owner: req.user._id }],
+  };
+  if (req.user.role === "admin") {
+    delete likedFilter.$or;
+  }
 
-  const [total, quizzes] = await Promise.all([
+  const [total, quizzes, likedQuizCount] = await Promise.all([
     Quiz.countDocuments(filter),
     Quiz.find(filter)
-      .select("title description status pages updatedAt")
+      .select("title description status pages likeCount likes updatedAt")
       .sort({ updatedAt: -1, _id: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
+    Quiz.countDocuments(likedFilter),
   ]);
 
   const quizSummaries = quizzes.map((quiz) => ({
@@ -37,6 +45,10 @@ export const getOverview = catchAsync(async (req, res) => {
     questionCount: (quiz.pages || []).reduce(
       (total, pageItem) => total + (pageItem.questions || []).length,
       0,
+    ),
+    likeCount: quiz.likeCount || 0,
+    likedByMe: (quiz.likes || []).some((userId) =>
+      userId.equals(req.user._id),
     ),
     updatedAt: quiz.updatedAt,
   }));
@@ -51,6 +63,7 @@ export const getOverview = catchAsync(async (req, res) => {
         username: req.user.username,
       },
       quizzes: quizSummaries,
+      likedQuizCount,
     },
     meta: {
       page,

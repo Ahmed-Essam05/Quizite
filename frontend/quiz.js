@@ -2,6 +2,10 @@
  * quiz.js — Quiz Taking and Instant Results Evaluation
  */
 
+(() => {
+  if (window.__quiziteQuizPageInitialized) return;
+  window.__quiziteQuizPageInitialized = true;
+
 const THEME_KEY = "quizite-theme";
 const toast = document.querySelector("#toast");
 let toastTimer;
@@ -22,26 +26,21 @@ const tookCountEl = document.querySelector("#quiz-took-count");
 
 const formEl = document.querySelector("#quiz-take-form");
 const questionsArea = document.querySelector("#questions-render-area");
+const pageNav = document.querySelector("#quiz-page-nav");
+const prevPageBtn = document.querySelector("#prev-page-btn");
+const nextPageBtn = document.querySelector("#next-page-btn");
+const pageIndicator = document.querySelector("#quiz-page-indicator");
 const submitBtn = document.querySelector("#submit-quiz-btn");
 const shareQuizBtn = document.querySelector("#share-quiz-btn");
 const likeBtn = document.querySelector("#like-btn");
 const likeCountEl = document.querySelector("#like-count");
 const statusNoteEl = document.querySelector("#quiz-status-note");
 
-const resultsCard = document.querySelector("#results-card");
-const resultsBadge = document.querySelector("#results-badge");
-const resultsTitle = document.querySelector("#results-title");
-const resultsScoreCount = document.querySelector("#results-score-count");
-const resultsTotalCount = document.querySelector("#results-total-count");
-const resultsPercentage = document.querySelector("#results-percentage");
-const resultsBreakdownList = document.querySelector("#results-breakdown-list");
-const resultsUngradedNote = document.querySelector("#results-ungraded-note");
-const retakeBtn = document.querySelector("#retake-btn");
-const shareResultBtn = document.querySelector("#share-result-btn");
-
 let currentQuizData = null;
 let likedByMe = false;
 let canRetake = true;
+let currentPageIndex = 0;
+let isSubmitting = false;
 
 /* --------------------------------------------------------------------------
    Theme management
@@ -103,6 +102,11 @@ const getQuizIdFromUrl = () => {
 };
 
 const loadQuiz = async () => {
+  resetSubmitState();
+  loadingEl.hidden = false;
+  errorEl.hidden = true;
+  containerEl.hidden = true;
+
   const quizId = getQuizIdFromUrl();
   if (!quizId) {
     showQuizError("Invalid quiz link.");
@@ -134,6 +138,7 @@ const loadQuiz = async () => {
 
 const showQuizError = (message) => {
   loadingEl.hidden = true;
+  containerEl.hidden = true;
   errorEl.hidden = false;
   errorMsgEl.textContent = message;
 };
@@ -144,6 +149,7 @@ const showQuizError = (message) => {
 
 const renderQuiz = (quiz, isOwner) => {
   loadingEl.hidden = true;
+  errorEl.hidden = true;
   containerEl.hidden = false;
 
   document.title = `${quiz.title} — Quizite`;
@@ -183,19 +189,25 @@ const renderQuiz = (quiz, isOwner) => {
     likeCountEl.textContent = String(quiz.likeCount || 0);
   }
 
+  formEl.hidden = !canRetake;
+  statusNoteEl.hidden = canRetake;
   if (!canRetake) {
-    formEl.hidden = true;
-    statusNoteEl.hidden = false;
     statusNoteEl.textContent =
       "You have already completed this quiz and the creator did not enable retakes.";
   }
 
-  // Render question cards
+  // Render question cards grouped by quiz page
   let questionNumber = 1;
   const questionsHtml = [];
+  const quizPages = (quiz.pages || []).filter(
+    (page) => (page.questions || []).length > 0,
+  );
 
-  for (const page of quiz.pages || []) {
-    for (const q of page.questions || []) {
+  quizPages.forEach((page, pageIndex) => {
+    const pageStart = questionNumber;
+    const pageQuestionsHtml = [];
+
+    for (const q of page.questions) {
       const qNum = questionNumber++;
       let inputHtml = "";
 
@@ -230,7 +242,7 @@ const renderQuiz = (quiz, isOwner) => {
           ></textarea>`;
       }
 
-      questionsHtml.push(`
+      pageQuestionsHtml.push(`
         <article class="take-question-card" data-q-id="${q.id}">
           <div class="take-question-header">
             <span class="take-question-num">Question ${qNum}</span>
@@ -239,17 +251,96 @@ const renderQuiz = (quiz, isOwner) => {
           ${inputHtml}
         </article>`);
     }
-  }
+
+    const pageEnd = questionNumber - 1;
+    const rangeLabel =
+      pageStart === pageEnd
+        ? `Question ${pageStart}`
+        : `Questions ${pageStart}–${pageEnd}`;
+
+    questionsHtml.push(`
+      <section class="take-page-section" data-page-index="${pageIndex}" ${
+        pageIndex === 0 ? "" : "hidden"
+      }>
+        ${
+          quizPages.length > 1
+            ? `<div class="take-page-heading">
+                <span class="take-page-title">Page ${pageIndex + 1}</span>
+                <span class="take-page-range">${rangeLabel}</span>
+              </div>`
+            : ""
+        }
+        <div class="take-page-questions">
+          ${pageQuestionsHtml.join("")}
+        </div>
+      </section>`);
+  });
 
   questionsArea.innerHTML = questionsHtml.join("");
+  showTakePage(0);
 };
+
+const showTakePage = (pageIndex, { scroll = false } = {}) => {
+  const pageSections = Array.from(
+    questionsArea.querySelectorAll(".take-page-section"),
+  );
+
+  if (pageSections.length === 0) {
+    pageNav.hidden = true;
+    submitBtn.hidden = false;
+    return;
+  }
+
+  currentPageIndex = Math.max(
+    0,
+    Math.min(pageIndex, pageSections.length - 1),
+  );
+
+  pageSections.forEach((section, index) => {
+    section.hidden = index !== currentPageIndex;
+  });
+
+  const hasMultiplePages = pageSections.length > 1;
+  pageNav.hidden = !hasMultiplePages;
+  prevPageBtn.hidden = !hasMultiplePages || currentPageIndex === 0;
+  nextPageBtn.hidden =
+    !hasMultiplePages || currentPageIndex === pageSections.length - 1;
+  submitBtn.hidden = hasMultiplePages
+    ? currentPageIndex !== pageSections.length - 1
+    : false;
+
+  pageIndicator.textContent = hasMultiplePages
+    ? `Page ${currentPageIndex + 1} of ${pageSections.length}`
+    : "";
+
+  if (scroll) {
+    questionsArea.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+};
+
+prevPageBtn?.addEventListener("click", () => {
+  showTakePage(currentPageIndex - 1, { scroll: true });
+});
+
+nextPageBtn?.addEventListener("click", () => {
+  showTakePage(currentPageIndex + 1, { scroll: true });
+});
 
 /* --------------------------------------------------------------------------
    Submit Answers
    -------------------------------------------------------------------------- */
 
+const resetSubmitState = () => {
+  isSubmitting = false;
+  submitBtn.disabled = false;
+  submitBtn.textContent = "Submit Answers";
+};
+
 formEl.addEventListener("submit", async (e) => {
   e.preventDefault();
+
+  if (isSubmitting) return;
+  isSubmitting = true;
 
   const quizId = getQuizIdFromUrl();
   const answers = [];
@@ -277,8 +368,9 @@ formEl.addEventListener("submit", async (e) => {
     }
   });
 
+  loadingEl.hidden = true;
   submitBtn.disabled = true;
-  submitBtn.textContent = "Grading answers…";
+  submitBtn.textContent = "Submitting answers…";
 
   try {
     const response = await fetch(`/api/quizzes/${quizId}/submit`, {
@@ -288,136 +380,41 @@ formEl.addEventListener("submit", async (e) => {
       body: JSON.stringify({ answers }),
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      showToast(data.message || "Failed to submit answers");
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Submit Answers";
+      showToast(data?.message || "Failed to submit answers");
+      resetSubmitState();
       return;
     }
 
-    renderResults(data.data);
+    if (!data?.data || !Array.isArray(data.data.results)) {
+      showToast("The server returned an invalid result. Please try again.");
+      resetSubmitState();
+      return;
+    }
+
+    const saved = window.QuiziteResultStore?.save(quizId, {
+      ...data.data,
+      quizTitle: currentQuizData?.title || "Quiz results",
+    });
+
+    if (!saved) {
+      showToast("Your results could not be saved for display. Please retry.");
+      resetSubmitState();
+      return;
+    }
+
+    window.location.assign(`/quiz/${encodeURIComponent(quizId)}/results`);
   } catch (err) {
     showToast("A network error occurred while submitting.");
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Submit Answers";
+    resetSubmitState();
   }
 });
 
 /* --------------------------------------------------------------------------
-   Render Results & Breakdown
+   Share Action
    -------------------------------------------------------------------------- */
-
-const renderResults = ({
-  score,
-  totalQuestions,
-  gradedQuestions,
-  percentage,
-  results,
-  peopleTookCount,
-  countedForParticipants,
-}) => {
-  formEl.hidden = true;
-  resultsCard.hidden = false;
-
-  const gradedTotal =
-    typeof gradedQuestions === "number" ? gradedQuestions : totalQuestions;
-
-  resultsPercentage.textContent = `${percentage}%`;
-  resultsBadge.textContent = `${percentage}%`;
-  resultsScoreCount.textContent = String(score);
-  resultsTotalCount.textContent = String(gradedTotal);
-
-  if (percentage >= 80) {
-    resultsBadge.className = "results-score-badge";
-    resultsTitle.textContent = "Excellent Job! 🎉";
-  } else if (percentage >= 50) {
-    resultsBadge.className = "results-score-badge is-mid";
-    resultsTitle.textContent = "Good Effort! 👍";
-  } else {
-    resultsBadge.className = "results-score-badge is-low";
-    resultsTitle.textContent = "Keep Practicing! 💪";
-  }
-
-  if (resultsUngradedNote) {
-    const hasUngraded = (results || []).some((r) => r.graded === false);
-    resultsUngradedNote.hidden = !hasUngraded;
-  }
-
-  // Question review items
-  resultsBreakdownList.innerHTML = (results || [])
-    .map((r, idx) => {
-      const isUngraded = r.graded === false;
-      const stateClass = isUngraded
-        ? "is-ungraded"
-        : r.isCorrect
-          ? "is-correct"
-          : "is-incorrect";
-      const statusLabel = isUngraded
-        ? "• Not graded"
-        : r.isCorrect
-          ? "✓ Correct"
-          : "✕ Incorrect";
-      const acceptedAnswers =
-        Array.isArray(r.acceptedAnswers) && r.acceptedAnswers.length > 0
-          ? `<span class="review-answer-line">Accepted answers: <strong class="review-correct-text">${r.acceptedAnswers
-              .map((answer) => escapeHtml(answer))
-              .join(", ")}</strong></span>`
-          : "";
-      const correctAnswer =
-        !isUngraded && !r.isCorrect && r.correctAnswer
-          ? `<span class="review-answer-line">Correct answer: <strong class="review-correct-text">${escapeHtml(r.correctAnswer)}</strong></span>`
-          : "";
-
-      return `
-    <div class="review-item ${stateClass}">
-      <div class="review-item__top">
-        <h4 class="review-item__title">Q${idx + 1}: ${escapeHtml(r.title)}</h4>
-        <span class="review-status-tag ${stateClass}">
-          ${statusLabel}
-        </span>
-      </div>
-      <div class="review-item__details">
-        <span class="review-answer-line">
-          Your answer: <strong>${escapeHtml(r.userAnswer || "No answer")}</strong>
-        </span>
-        ${acceptedAnswers}
-        ${correctAnswer}
-      </div>
-    </div>`;
-    })
-    .join("");
-
-  // Update participant count from the server response
-  if (typeof peopleTookCount === "number") {
-    tookCountEl.textContent = String(peopleTookCount);
-  } else if (countedForParticipants) {
-    const currentCount = Number(tookCountEl.textContent) || 0;
-    tookCountEl.textContent = String(currentCount + 1);
-  }
-
-  // Retakes may have been consumed by this submission
-  if (!currentQuizData?.allowRetakes) {
-    canRetake = false;
-  }
-  retakeBtn.hidden = !canRetake;
-
-  resultsCard.scrollIntoView({ behavior: "smooth" });
-};
-
-/* --------------------------------------------------------------------------
-   Retake & Share Actions
-   -------------------------------------------------------------------------- */
-
-retakeBtn?.addEventListener("click", () => {
-  formEl.reset();
-  formEl.hidden = false;
-  resultsCard.hidden = true;
-  submitBtn.disabled = false;
-  submitBtn.textContent = "Submit Answers";
-  formEl.scrollIntoView({ behavior: "smooth" });
-});
 
 const copyShareLink = () => {
   const url = window.location.href;
@@ -432,7 +429,6 @@ const copyShareLink = () => {
 };
 
 shareQuizBtn?.addEventListener("click", copyShareLink);
-shareResultBtn?.addEventListener("click", copyShareLink);
 
 /* --------------------------------------------------------------------------
    Like / Unlike
@@ -454,6 +450,9 @@ likeBtn?.addEventListener("click", async () => {
 
     if (response.status === 401) {
       showToast("Please log in to like quizzes.");
+      window.setTimeout(() => {
+        window.location.href = "/login";
+      }, 900);
       return;
     }
 
@@ -474,5 +473,10 @@ likeBtn?.addEventListener("click", async () => {
   }
 });
 
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) loadQuiz();
+});
+
 // Initialize
 loadQuiz();
+})();

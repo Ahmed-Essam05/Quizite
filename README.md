@@ -31,14 +31,15 @@ A full-stack quiz creation and taking platform built with **Node.js**, **Express
   - **Written Answer** (optional accepted-answer list for auto-grading; empty = collected but not graded)
 - ✏️ **Quiz Editing** — Owners can load any quiz back into the builder and update it (`PATCH`)
 - 🗑 **Quiz Deletion** — Owners can delete quizzes from the dashboard with a confirmation step
-- 📄 **Multi-page Quizzes** — Organize questions across pages (max 10 questions per page)
+- 📄 **Multi-page Quizzes** — The builder keeps every question on one continuous page and groups them into pages of 10; takers move between pages with Previous / Next (max 8 pages / 80 questions)
 - 🌐 **Quiz Sharing** — Every quiz gets a unique shareable URL
-- ✅ **Instant Grading** — Submit answers and receive a percentage score with per-question breakdown
+- ✅ **Instant Grading** — Submit answers and land on a dedicated, refresh-safe results page with percentage score and per-question breakdown
 - 🛡 **Retake Control** — Per-quiz `allowRetakes` setting enforces a single submission when disabled
 - 👁 **Answer Reveal Control** — Per-quiz `showCorrectAnswers` setting decides whether takers see the answer key
-- ❤️ **Likes** — Logged-in users can like / unlike quizzes (idempotent, atomic)
-- 👤 **Owner Dashboard** — Paginated overview of owned quizzes plus a "Quizzes you have taken" section
+- ❤️ **Likes** — Logged-in users can like / unlike quizzes (idempotent, atomic) from the quiz page and dashboard cards; counts stay in sync and rapid clicks are guarded
+- 👤 **Owner Dashboard** — Paginated overview of owned quizzes plus "Liked quizzes" and "Quizzes you have taken" sections
 - 📚 **Taken History** — Track completed quizzes with attempt counts and last score
+- ❤️ **Liked Quizzes** — Dedicated, paginated sidebar view of every quiz the current user has liked, with an empty state and count badge
 - 🌙 **Dark / Light Theme** — Persisted via `localStorage` with OS preference detection
 - 💾 **Draft Persistence** — Quiz creation state is auto-saved to `localStorage` before server submission
 - 🔒 **Draft Privacy** — Draft quizzes are only accessible to their owner (and admins for viewing)
@@ -129,14 +130,14 @@ quizite/
 ├── controllers/
 │   ├── authController.js      # signup, login, logout, resetPassword, updatePassword, protect, optionalAuth
 │   ├── quizController.js      # createQuiz, getQuiz, updateQuiz, deleteQuiz, submitQuiz, likeQuiz, unlikeQuiz
-│   ├── userController.js      # getMe, getCompletedQuizzes, changePassword
-│   ├── overviewController.js  # getOverview — paginated list of owned quizzes
+│   ├── userController.js      # getMe, getCompletedQuizzes, getLikedQuizzes, changePassword
+│   ├── overviewController.js  # getOverview — paginated owned quizzes + liked count
 │   └── errorController.js     # Global error handler with mapped DB/JWT errors
 │
 ├── routes/
 │   ├── authRoute.js           # POST /api/auth/signup|login|reset-password|update-password, GET /logout
 │   ├── quizRoute.js           # CRUD /api/quizzes + submit + like/unlike
-│   ├── userRoute.js           # GET/PATCH /api/users/me + GET /api/users/me/completed
+│   ├── userRoute.js           # GET/PATCH /api/users/me + completed + liked lists
 │   └── overviewRoute.js       # GET /api/overview
 │
 ├── utils/
@@ -150,15 +151,18 @@ quizite/
 │   ├── helpers/               # db bootstrap, factories, agent helpers
 │   ├── auth.test.js           # Auth endpoint tests
 │   ├── quizApi.test.js        # Quiz CRUD/submit/like/users API tests
-│   └── quizModel.test.js      # Schema validation tests
+│   ├── quizModel.test.js      # Schema validation tests
+│   └── quizUi.test.js         # Quiz loading, submission, and results-page tests
 │
 └── frontend/
-    ├── overview.html / .js / .css   # Dashboard: owned + taken quizzes, pagination, edit/delete
+    ├── overview.html / .js / .css   # Dashboard: owned + liked + taken quizzes, pagination, likes, edit/delete
     ├── login.html / auth.js / auth.css # Login form
     ├── signup.html                  # Signup form (shares auth.js / auth.css)
     ├── profile.html / .js / .css    # Profile info + password change
     ├── create.html / .js / .css     # Quiz builder UI (create + edit mode)
-    └── quiz.html / .js / .css       # Quiz taking + instant results UI
+    ├── quiz.html / .js / .css       # Quiz taking UI
+    ├── results.html / .js / .css    # Dedicated quiz results page
+    └── quizResultStore.js           # Per-tab short-lived results handoff
 ```
 
 ---
@@ -188,7 +192,7 @@ quizite/
 | `description`    | String     | Optional, max 1000 chars                        |
 | `owner`          | ObjectId   | Ref to User, indexed                            |
 | `status`         | String     | `"draft"` or `"published"`                      |
-| `pages`          | Page[]     | Nested array (max 10 questions per page)        |
+| `pages`          | Page[]     | Nested array (max 8 pages / 80 questions total) |
 | `likes`          | ObjectId[] | Users who liked the quiz (unique refs)          |
 | `likeCount`      | Number     | Denormalized like count                         |
 | `peopleTookCount`| Number     | Counts unique logged-in takers                  |
@@ -202,6 +206,9 @@ quizite/
 |-------------|--------------|--------------------------------|
 | `title`     | String       | Optional, max 200 chars        |
 | `questions` | Question[]   | Max 10 per page (validated)    |
+
+A quiz may contain at most 8 pages and 80 questions in total. Both limits are
+validated when a quiz is created or updated.
 
 #### Question
 
@@ -275,7 +282,7 @@ All API endpoints are prefixed with `/api`.
 
 | Method | Path | Auth     | Description                          |
 |--------|------|----------|--------------------------------------|
-| GET    | `/`  | Required | Returns user info + paginated list of their quizzes |
+| GET    | `/`  | Required | Returns user info, paginated owned quizzes (with like state), and `likedQuizCount` |
 
 **Query parameters:** `page` (default `1`), `limit` (default `20`, max `50`).
 
@@ -286,8 +293,18 @@ All API endpoints are prefixed with `/api`.
   "data": {
     "user": { "id": "...", "username": "alice" },
     "quizzes": [
-      { "id": "...", "title": "My Quiz", "description": "", "questionCount": 5, "status": "published", "updatedAt": "..." }
-    ]
+      {
+        "id": "...",
+        "title": "My Quiz",
+        "description": "",
+        "questionCount": 5,
+        "status": "published",
+        "likeCount": 3,
+        "likedByMe": true,
+        "updatedAt": "..."
+      }
+    ],
+    "likedQuizCount": 7
   },
   "meta": {
     "total": 23,
@@ -308,6 +325,7 @@ All API endpoints are prefixed with `/api`.
 |--------|--------------|----------|----------------------------------------------|
 | GET    | `/me`        | Required | Profile info (username, email, role) + stats |
 | GET    | `/me/completed` | Required | Quizzes the user has taken, with attempt stats |
+| GET    | `/me/liked`  | Required | Paginated quizzes liked by the current user |
 | PATCH  | `/me/password`  | Required | Change password (verifies current, re-issues session) |
 
 **Change password body:**
@@ -327,11 +345,49 @@ All API endpoints are prefixed with `/api`.
         "title": "My Quiz",
         "status": "published",
         "questionCount": 5,
+        "likeCount": 3,
+        "likedByMe": true,
         "attempts": 2,
         "lastPercentage": 80,
         "lastCompletedAt": "..."
       }
     ]
+  }
+}
+```
+
+**Liked quizzes — query parameters:** `page` (default `1`), `limit` (default
+`20`, max `50`). Only published quizzes and drafts owned by the viewer are
+returned; an admin's existing draft access is preserved. Deleted quizzes
+disappear automatically because likes are stored on the quiz document.
+
+```json
+{
+  "status": "success",
+  "results": 1,
+  "data": {
+    "quizzes": [
+      {
+        "id": "...",
+        "title": "My Quiz",
+        "description": "",
+        "status": "published",
+        "questionCount": 5,
+        "likeCount": 3,
+        "likedByMe": true,
+        "owner": { "username": "alice" },
+        "updatedAt": "...",
+        "shareUrl": "/quiz/..."
+      }
+    ]
+  },
+  "meta": {
+    "total": 7,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 1,
+    "hasPrevPage": false,
+    "hasNextPage": false
   }
 }
 ```
@@ -353,6 +409,11 @@ All API endpoints are prefixed with `/api`.
 `GET /:id` additionally returns `isOwner`, `likedByMe`, and `canRetake` so the
 client can render the correct state. Owners receive the answer key
 (`correctChoiceId` / `acceptedAnswers`) when loading their own quiz for editing.
+
+`POST /:id/like` and `DELETE /:id/like` are idempotent and return
+`{ likeCount, liked }`. Only published quizzes can be liked. The `likes` array
+stores unique user references and is the source of truth; `likeCount` is
+denormalized and repaired if a legacy document has drifted.
 
 #### Create / Update Quiz Body
 
@@ -389,9 +450,15 @@ client can render the correct state. Owners receive the answer key
 > - `acceptedAnswers` is optional for written questions; when empty the question
 >   is collected but excluded from the percentage denominator
 >   (`gradedQuestions`).
-> - Alternatively send a `pages` array instead of `questions` to use multi-page
->   layout. Existing question and choice `_id`s may be included so they are
->   preserved when editing (the builder sends them on `PATCH`).
+> - A flat `questions` array is automatically grouped into pages of up to 10
+>   questions, with a maximum of 8 pages and 80 questions per quiz.
+> - Alternatively send a `pages` array to control page boundaries directly;
+>   each page still accepts at most 10 questions. Existing question and choice
+>   `_id`s may be included so they are preserved when editing (the builder sends
+>   them on `PATCH`).
+> - The creator builder never paginates its question list: all questions remain
+>   visible and editable on one continuous screen, grouped by page. Only the
+>   quiz-taking page uses Previous / Next navigation.
 
 #### Submit Answers Body
 
@@ -441,6 +508,9 @@ client can render the correct state. Owners receive the answer key
 
 > - Written answers without `acceptedAnswers` return `"graded": false` and are
 >   excluded from `gradedQuestions` / `percentage`.
+> - The frontend keeps this response in per-tab `sessionStorage` for one hour
+>   and navigates to `/quiz/:id/results`. Submission data is never placed in
+>   the URL, and `localStorage` is not used for results.
 > - `correctAnswer` and `acceptedAnswers` are only included when the quiz has
 >   `showCorrectAnswers: true`.
 > - When retakes are disabled and the user already submitted, the endpoint
@@ -454,22 +524,28 @@ client can render the correct state. Owners receive the answer key
 
 | URL              | File              | Description                                              | Auth Required |
 |------------------|-------------------|----------------------------------------------------------|---------------|
-| `/`              | `overview.html`   | Dashboard — owned quizzes (paginated) + taken history    | No (guest view)|
+| `/`              | `overview.html`   | Dashboard — owned, liked, and taken quizzes (paginated)  | No (guest view)|
 | `/login`         | `login.html`      | Login form                                               | No            |
 | `/signup`        | `signup.html`     | Signup form                                              | No            |
 | `/profile`       | `profile.html`    | Profile info + stats and password change form            | Yes (redirects to `/login`) |
 | `/create`        | `create.html`     | Quiz builder with question type tabs and live preview    | Yes (redirects to `/login`) |
-| `/quiz/:id`      | `quiz.html`       | Take a quiz and see instant scored results               | No (public)   |
+| `/quiz/:id`      | `quiz.html`       | Take a quiz; successful submissions navigate to results  | No (public)   |
+| `/quiz/:id/results` | `results.html` | Dedicated scored results and per-question review        | No (public; per-tab result data) |
 | `/quiz/:id/edit` | `create.html`     | Same builder in edit mode, pre-loaded with the quiz      | Yes (redirects to `/login`) |
 
 ### Notable Frontend Behaviours
 
 - **Route Protection & Gating** — Protected pages (`/create`, `/profile`, `/quiz/:id/edit`) are guarded on the server via `protectPage` middleware (redirecting unauthenticated requests to `/login`) and validated by client-side initialization guards. On the dashboard, attempting to create a quiz as a guest routes directly to `/login`.
 - **Session Cookie Architecture** — Authentication tokens are preserved via cookie (`jwt` with `Path=/`, 30-day lifetime) and mirrored in client storage. The overview page synchronously reads session state on startup and immediately transitions to authenticated mode upon login without desynchronization.
+- **Dashboard likes** — Published quiz cards show a heart button with the current count: filled when liked, outlined otherwise. Likes update optimistically, guard against rapid repeat clicks, and roll back with an error toast if the request fails. Guests attempting to like are sent to `/login`.
+- **Liked quizzes** — The sidebar "Liked quizzes" item loads `GET /api/users/me/liked` with pagination, loading/error states, and an empty state. Its badge uses `likedQuizCount` from the overview response (and the liked endpoint's `meta.total` once loaded), so no extra count request is required.
 - **Theme** — Dark/light mode toggle persisted in `localStorage`; defaults to OS preference
 - **Guest preview** — Append `?demo=1` to the overview URL to see a populated demo state
 - **Draft saving** — The quiz builder auto-saves to `localStorage` on every input change (create mode only; edit mode always loads from the server)
-- **Answer security** — Answer keys are excluded from `GET /api/quizzes/:id` for takers; they are sent to owners for editing and included in submit results only when `showCorrectAnswers` is enabled
+- **Builder vs. taking pagination** — The creator builder shows every question in one continuous list, automatically grouped into page sections of 10 with page ranges (max 8 pages / 80 questions). Quiz takers see one page at a time and use Previous / Next; only the last page shows the submit button.
+- **Quiz loading state** — The initial spinner is tied only to the quiz `GET` request. Success reveals the quiz and failure reveals an error card; submission uses a separate "Submitting answers…" button state and never reuses the page loader.
+- **Dedicated results page** — After a successful submission, the server response is stored under a per-tab `sessionStorage` key with a one-hour TTL, then the browser navigates to `/quiz/:id/results`. No result data or answer keys are placed in the URL. Refreshing works in the same tab; missing or expired data shows a clear error instead of stale results.
+- **Answer security** — Answer keys are excluded from `GET /api/quizzes/:id` for takers; they are sent to owners for editing and included in submit results only when `showCorrectAnswers` is enabled. The results page additionally refuses to render reveal fields when that setting was not enabled.
 
 ---
 

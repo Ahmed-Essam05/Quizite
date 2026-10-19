@@ -1,5 +1,11 @@
 import mongoose from "mongoose";
 
+import {
+  MAX_PAGES,
+  MAX_QUESTIONS_PER_PAGE,
+  MAX_TOTAL_QUESTIONS,
+} from "../utils/quizValidation.js";
+
 const { Schema } = mongoose;
 
 const choiceSchema = new Schema(
@@ -67,8 +73,9 @@ const pageSchema = new Schema(
       type: [questionSchema],
       default: [],
       validate: {
-        validator: (questions) => questions.length <= 10,
-        message: "A page cannot contain more than 10 questions",
+        validator: (questions) =>
+          questions.length <= MAX_QUESTIONS_PER_PAGE,
+        message: `A page cannot contain more than ${MAX_QUESTIONS_PER_PAGE} questions`,
       },
     },
   },
@@ -103,6 +110,20 @@ const quizSchema = new Schema(
     pages: {
       type: [pageSchema],
       default: [],
+      validate: [
+        {
+          validator: (pages) => pages.length <= MAX_PAGES,
+          message: `A quiz cannot contain more than ${MAX_PAGES} pages`,
+        },
+        {
+          validator: (pages) =>
+            pages.reduce(
+              (total, page) => total + (page.questions || []).length,
+              0,
+            ) <= MAX_TOTAL_QUESTIONS,
+          message: `A quiz cannot contain more than ${MAX_TOTAL_QUESTIONS} questions`,
+        },
+      ],
     },
     likes: {
       type: [{ type: Schema.Types.ObjectId, ref: "User" }],
@@ -132,6 +153,7 @@ const quizSchema = new Schema(
 );
 
 quizSchema.index({ status: 1, publishedAt: -1 });
+quizSchema.index({ likes: 1, updatedAt: -1 });
 
 quizSchema.pre("validate", function validateQuiz(next) {
   for (const page of this.pages) {
