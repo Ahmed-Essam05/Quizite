@@ -257,6 +257,20 @@ const HEART_OUTLINE_PATH =
 
 const getQuizId = (quiz) => String(quiz.id || quiz._id || "");
 
+const renderTakeAction = (quiz) => {
+  const quizId = getQuizId(quiz);
+
+  if (!quiz.completedByMe) {
+    return `<a class="btn-subtle" href="/quiz/${quizId}">Take quiz</a>`;
+  }
+
+  if (quiz.allowRetakes) {
+    return `<a class="btn-subtle" href="/quiz/${quizId}">Take again</a>`;
+  }
+
+  return "";
+};
+
 const renderLikeButton = (quiz) => {
   if (!state.authenticated) return "";
 
@@ -329,7 +343,7 @@ const renderOwnedQuiz = (quiz, index = 0) => {
             </svg>
             <span>Copy link</span>
           </button>
-          <a class="btn-subtle" href="/quiz/${quizId}">Take quiz</a>
+          ${renderTakeAction(quiz)}
           ${ownerActions}
         </div>
       </div>
@@ -360,6 +374,10 @@ const renderTakenQuiz = (quiz, index = 0) => {
     quiz.lastPercentage === null || quiz.lastPercentage === undefined
       ? ""
       : `<span class="quiz-meta-item">Last score: <strong>${quiz.lastPercentage}%</strong></span>`;
+  const takeAction = renderTakeAction(quiz);
+  const takeActionHtml = takeAction
+    ? `<div class="quiz-card-actions">${takeAction}</div>`
+    : "";
 
   return `
     <article class="quiz-card" aria-label="Taken quiz: ${escapeHtml(quiz.title)}">
@@ -367,9 +385,7 @@ const renderTakenQuiz = (quiz, index = 0) => {
         <span class="quiz-sticker" aria-hidden="true">${sticker}</span>
         <a class="quiz-title" href="/quiz/${quiz.id}">${escapeHtml(quiz.title)}</a>
         <span class="quiz-pill quiz-pill--${quiz.status === "draft" ? "draft" : "published"}">${quiz.status === "draft" ? "Draft" : "Published"}</span>
-        <div class="quiz-card-actions">
-          <a class="btn-subtle" href="/quiz/${quiz.id}">Take again</a>
-        </div>
+        ${takeActionHtml}
       </div>
       ${descriptionHtml}
       <div class="quiz-card-meta">
@@ -399,6 +415,10 @@ const renderLikedQuiz = (quiz, index = 0) => {
     : "";
   const sticker = CARD_STICKERS[index % CARD_STICKERS.length];
   const quizId = getQuizId(quiz);
+  const takeAction = renderTakeAction(quiz);
+  const takeActionHtml = takeAction
+    ? `<div class="quiz-card-actions">${takeAction}</div>`
+    : "";
 
   return `
     <article class="quiz-card" aria-label="Liked quiz: ${escapeHtml(quiz.title)}">
@@ -406,9 +426,7 @@ const renderLikedQuiz = (quiz, index = 0) => {
         <span class="quiz-sticker" aria-hidden="true">${sticker}</span>
         <a class="quiz-title" href="/quiz/${quizId}">${escapeHtml(quiz.title)}</a>
         <span class="quiz-pill quiz-pill--${quiz.status === "draft" ? "draft" : "published"}">${quiz.status === "draft" ? "Draft" : "Published"}</span>
-        <div class="quiz-card-actions">
-          <a class="btn-subtle" href="/quiz/${quizId}">Take quiz</a>
-        </div>
+        ${takeActionHtml}
       </div>
       ${descriptionHtml}
       <div class="quiz-card-meta">

@@ -69,7 +69,8 @@ export const getMe = catchAsync(async (req, res) => {
 export const getCompletedQuizzes = catchAsync(async (req, res) => {
   const user = await User.findById(req.user._id).populate({
     path: "completedQuizzes",
-    select: "title description status pages likeCount likes updatedAt",
+    select:
+      "title description status pages likeCount likes allowRetakes updatedAt",
   });
 
   const quizzes = (user.completedQuizzes || []).filter(Boolean);
@@ -104,6 +105,8 @@ export const getCompletedQuizzes = catchAsync(async (req, res) => {
         likedByMe: (quiz.likes || []).some((userId) =>
           userId.equals(req.user._id),
         ),
+        allowRetakes: Boolean(quiz.allowRetakes),
+        completedByMe: true,
         attempts: stats.attempts || 0,
         lastPercentage: stats.lastPercentage ?? null,
         lastCompletedAt: stats.lastCompletedAt || null,
@@ -135,7 +138,9 @@ export const getLikedQuizzes = catchAsync(async (req, res) => {
   const [total, quizzes] = await Promise.all([
     Quiz.countDocuments(filter),
     Quiz.find(filter)
-      .select("title description status pages likeCount owner updatedAt")
+      .select(
+        "title description status pages likeCount owner allowRetakes updatedAt",
+      )
       .populate("owner", "username")
       .sort({ updatedAt: -1, _id: -1 })
       .skip((page - 1) * limit)
@@ -143,6 +148,9 @@ export const getLikedQuizzes = catchAsync(async (req, res) => {
       .lean(),
   ]);
 
+  const completedQuizIds = new Set(
+    (req.user.completedQuizzes || []).map(String),
+  );
   const likedQuizzes = quizzes.map((quiz) => ({
     id: quiz._id,
     title: quiz.title,
@@ -151,6 +159,8 @@ export const getLikedQuizzes = catchAsync(async (req, res) => {
     questionCount: countQuestions(quiz.pages),
     likeCount: quiz.likeCount || 0,
     likedByMe: true,
+    allowRetakes: Boolean(quiz.allowRetakes),
+    completedByMe: completedQuizIds.has(String(quiz._id)),
     owner: {
       username: quiz.owner?.username || "Anonymous",
     },

@@ -714,6 +714,85 @@ describe("Quiz API", () => {
       expect(completed.body.data.quizzes).toHaveLength(1);
       expect(completed.body.data.quizzes[0].attempts).toBe(2);
     });
+
+    it("returns the stored retake setting in completed quiz history", async () => {
+      const retakeable = await createQuizViaApi(alice, {
+        allowRetakes: true,
+      });
+      const locked = await createQuizViaApi(alice, {
+        allowRetakes: false,
+      });
+
+      await submitOnce(alice, retakeable.body.data.quiz.id);
+      await submitOnce(alice, locked.body.data.quiz.id);
+
+      const completed = await alice.get("/api/users/me/completed");
+      const byId = new Map(
+        completed.body.data.quizzes.map((quiz) => [quiz.id, quiz]),
+      );
+
+      expect(byId.get(retakeable.body.data.quiz.id).allowRetakes).toBe(true);
+      expect(byId.get(locked.body.data.quiz.id).allowRetakes).toBe(false);
+    });
+
+    it("exposes retake state across overview, liked, and completed lists", async () => {
+      const locked = await createQuizViaApi(bob, {
+        title: "Locked quiz",
+        allowRetakes: false,
+      });
+      const retakeable = await createQuizViaApi(bob, {
+        title: "Retakeable quiz",
+        allowRetakes: true,
+      });
+      const lockedId = locked.body.data.quiz.id;
+      const retakeableId = retakeable.body.data.quiz.id;
+
+      await bob.post(`/api/quizzes/${lockedId}/like`);
+      await bob.post(`/api/quizzes/${retakeableId}/like`);
+
+      const findCard = (response, quizId) =>
+        response.body.data.quizzes.find((quiz) => quiz.id === quizId);
+
+      const beforeOverview = await bob.get("/api/overview");
+      const beforeLiked = await bob.get("/api/users/me/liked");
+      const beforeCompleted = await bob.get("/api/users/me/completed");
+
+      expect(findCard(beforeOverview, lockedId)).toMatchObject({
+        allowRetakes: false,
+        completedByMe: false,
+      });
+      expect(findCard(beforeOverview, retakeableId)).toMatchObject({
+        allowRetakes: true,
+        completedByMe: false,
+      });
+      expect(findCard(beforeLiked, lockedId)).toMatchObject({
+        allowRetakes: false,
+        completedByMe: false,
+      });
+      expect(findCard(beforeLiked, retakeableId)).toMatchObject({
+        allowRetakes: true,
+        completedByMe: false,
+      });
+      expect(beforeCompleted.body.data.quizzes).toHaveLength(0);
+
+      await submitOnce(bob, lockedId);
+      await submitOnce(bob, retakeableId);
+
+      const afterOverview = await bob.get("/api/overview");
+      const afterLiked = await bob.get("/api/users/me/liked");
+      const afterCompleted = await bob.get("/api/users/me/completed");
+
+      for (const response of [afterOverview, afterLiked, afterCompleted]) {
+        expect(findCard(response, lockedId)).toMatchObject({
+          allowRetakes: false,
+          completedByMe: true,
+        });
+        expect(findCard(response, retakeableId)).toMatchObject({
+          allowRetakes: true,
+          completedByMe: true,
+        });
+      }
+    });
   });
 
   describe("likes", () => {

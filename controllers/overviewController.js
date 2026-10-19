@@ -29,7 +29,9 @@ export const getOverview = catchAsync(async (req, res) => {
   const [total, quizzes, likedQuizCount] = await Promise.all([
     Quiz.countDocuments(filter),
     Quiz.find(filter)
-      .select("title description status pages likeCount likes updatedAt")
+      .select(
+        "title description status pages likeCount likes allowRetakes updatedAt",
+      )
       .sort({ updatedAt: -1, _id: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -37,6 +39,9 @@ export const getOverview = catchAsync(async (req, res) => {
     Quiz.countDocuments(likedFilter),
   ]);
 
+  const completedQuizIds = new Set(
+    (req.user.completedQuizzes || []).map(String),
+  );
   const quizSummaries = quizzes.map((quiz) => ({
     id: quiz._id,
     title: quiz.title,
@@ -47,9 +52,9 @@ export const getOverview = catchAsync(async (req, res) => {
       0,
     ),
     likeCount: quiz.likeCount || 0,
-    likedByMe: (quiz.likes || []).some((userId) =>
-      userId.equals(req.user._id),
-    ),
+    likedByMe: (quiz.likes || []).some((userId) => userId.equals(req.user._id)),
+    allowRetakes: Boolean(quiz.allowRetakes),
+    completedByMe: completedQuizIds.has(String(quiz._id)),
     updatedAt: quiz.updatedAt,
   }));
 

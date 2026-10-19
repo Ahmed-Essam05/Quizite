@@ -152,7 +152,8 @@ quizite/
 │   ├── auth.test.js           # Auth endpoint tests
 │   ├── quizApi.test.js        # Quiz CRUD/submit/like/users API tests
 │   ├── quizModel.test.js      # Schema validation tests
-│   └── quizUi.test.js         # Quiz loading, submission, and results-page tests
+│   ├── quizUi.test.js         # Quiz loading, submission, and results-page tests
+│   └── overviewUi.test.js     # Dashboard taken-quiz action tests
 │
 └── frontend/
     ├── overview.html / .js / .css   # Dashboard: owned + liked + taken quizzes, pagination, likes, edit/delete
@@ -282,7 +283,7 @@ All API endpoints are prefixed with `/api`.
 
 | Method | Path | Auth     | Description                          |
 |--------|------|----------|--------------------------------------|
-| GET    | `/`  | Required | Returns user info, paginated owned quizzes (with like state), and `likedQuizCount` |
+| GET    | `/`  | Required | Returns user info, paginated owned quizzes (with like/retake state), and `likedQuizCount` |
 
 **Query parameters:** `page` (default `1`), `limit` (default `20`, max `50`).
 
@@ -301,6 +302,8 @@ All API endpoints are prefixed with `/api`.
         "status": "published",
         "likeCount": 3,
         "likedByMe": true,
+        "allowRetakes": false,
+        "completedByMe": true,
         "updatedAt": "..."
       }
     ],
@@ -347,6 +350,8 @@ All API endpoints are prefixed with `/api`.
         "questionCount": 5,
         "likeCount": 3,
         "likedByMe": true,
+        "allowRetakes": false,
+        "completedByMe": true,
         "attempts": 2,
         "lastPercentage": 80,
         "lastCompletedAt": "..."
@@ -375,6 +380,8 @@ disappear automatically because likes are stored on the quiz document.
         "questionCount": 5,
         "likeCount": 3,
         "likedByMe": true,
+        "allowRetakes": false,
+        "completedByMe": true,
         "owner": { "username": "alice" },
         "updatedAt": "...",
         "shareUrl": "/quiz/..."
@@ -539,6 +546,7 @@ denormalized and repaired if a legacy document has drifted.
 - **Session Cookie Architecture** — Authentication tokens are preserved via cookie (`jwt` with `Path=/`, 30-day lifetime) and mirrored in client storage. The overview page synchronously reads session state on startup and immediately transitions to authenticated mode upon login without desynchronization.
 - **Dashboard likes** — Published quiz cards show a heart button with the current count: filled when liked, outlined otherwise. Likes update optimistically, guard against rapid repeat clicks, and roll back with an error toast if the request fails. Guests attempting to like are sent to `/login`.
 - **Liked quizzes** — The sidebar "Liked quizzes" item loads `GET /api/users/me/liked` with pagination, loading/error states, and an empty state. Its badge uses `likedQuizCount` from the overview response (and the liked endpoint's `meta.total` once loaded), so no extra count request is required.
+- **Dashboard take actions** — All dashboard sections use the stored `allowRetakes` setting and the current user's completion state: uncompleted quizzes show "Take quiz", completed quizzes with retakes show "Take again", and completed no-retake quizzes show no take action. Direct quiz links still show the explanation when retakes are disabled.
 - **Theme** — Dark/light mode toggle persisted in `localStorage`; defaults to OS preference
 - **Guest preview** — Append `?demo=1` to the overview URL to see a populated demo state
 - **Draft saving** — The quiz builder auto-saves to `localStorage` on every input change (create mode only; edit mode always loads from the server)
