@@ -988,6 +988,168 @@ main {
   border-color: rgba(207, 34, 46, 0.4);
 }
 
+.btn--danger {
+  color: #ffffff;
+  background-color: #d12437;
+  border-color: #d12437;
+  box-shadow: 0 4px 0 #9e1527;
+}
+
+.btn--danger:hover {
+  color: #ffffff;
+  background-color: #b91f31;
+  border-color: #b91f31;
+  box-shadow: 0 6px 0 #9e1527;
+}
+
+.btn--danger:active {
+  box-shadow: 0 2px 0 #9e1527;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+}
+
+[data-theme="dark"] .btn--danger {
+  color: #ffffff;
+  background-color: #e5484d;
+  border-color: #e5484d;
+  box-shadow: 0 4px 0 #8b2529;
+}
+
+[data-theme="dark"] .btn--danger:hover {
+  background-color: #f05b60;
+  border-color: #f05b60;
+  box-shadow: 0 6px 0 #8b2529;
+}
+
+[data-theme="dark"] .btn--danger:active {
+  box-shadow: 0 2px 0 #8b2529;
+}
+
+/* Delete confirmation modal */
+.delete-modal-open {
+  overflow: hidden;
+}
+
+.delete-modal-backdrop {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background-color: rgba(16, 17, 31, 0.62);
+  backdrop-filter: blur(3px);
+}
+
+.delete-modal-backdrop[hidden] {
+  display: none;
+}
+
+.delete-modal {
+  width: min(440px, 100%);
+  padding: 30px 28px 24px;
+  color: var(--ink);
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.delete-modal__icon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  place-items: center;
+  color: #cf222e;
+  background-color: #ffebe9;
+  border: 1px solid #ffc1c6;
+  border-radius: 18px;
+}
+
+[data-theme="dark"] .delete-modal__icon {
+  color: #ff7b72;
+  background-color: rgba(248, 81, 73, 0.14);
+  border-color: rgba(248, 81, 73, 0.35);
+}
+
+.delete-modal__title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.delete-modal__description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.delete-modal__description strong {
+  color: var(--ink);
+}
+
+.delete-modal__error {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  color: #cf222e;
+  background-color: #ffebe9;
+  border: 1px solid #ff8182;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: left;
+}
+
+[data-theme="dark"] .delete-modal__error {
+  color: #f85149;
+  background-color: #2d1517;
+  border-color: #8b2529;
+}
+
+.delete-modal__error[hidden] {
+  display: none;
+}
+
+.delete-modal__actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.delete-modal__actions .btn {
+  min-width: 132px;
+}
+
+@media (max-width: 480px) {
+  .delete-modal-backdrop {
+    padding: 16px;
+  }
+
+  .delete-modal {
+    padding: 26px 20px 20px;
+    border-radius: 18px;
+  }
+
+  .delete-modal__actions {
+    flex-direction: column;
+  }
+
+  .delete-modal__actions .btn {
+    width: 100%;
+  }
+}
+
 /* Pagination */
 .pagination {
   display: flex;

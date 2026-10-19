@@ -162,6 +162,62 @@
       </div>
     </div>
 
+    <!-- Delete Quiz Confirmation Modal -->
+    <div id="delete-quiz-modal" class="delete-modal-backdrop" hidden>
+      <div
+        class="delete-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-modal-title"
+        aria-describedby="delete-modal-description"
+        tabindex="-1"
+      >
+        <div class="delete-modal__icon" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            width="30"
+            height="30"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M3 6h18"></path>
+            <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"></path>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+            <path d="M10 11v6"></path>
+            <path d="M14 11v6"></path>
+          </svg>
+        </div>
+        <h2 id="delete-modal-title" class="delete-modal__title">
+          Delete this quiz?
+        </h2>
+        <p id="delete-modal-description" class="delete-modal__description">
+          &ldquo;<strong id="delete-modal-quiz-title"></strong>&rdquo; will be
+          permanently deleted. This action cannot be undone.
+        </p>
+        <p
+          id="delete-modal-error"
+          class="delete-modal__error"
+          role="alert"
+          hidden
+        ></p>
+        <div class="delete-modal__actions">
+          <button class="btn" type="button" id="delete-modal-cancel">
+            Cancel
+          </button>
+          <button
+            class="btn btn--danger"
+            type="button"
+            id="delete-modal-confirm"
+          >
+            Delete quiz
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Notification Toast -->
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </body>

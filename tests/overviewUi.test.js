@@ -72,14 +72,16 @@ const dashboardQuizzes = () => [
   },
 ];
 
-const createOverviewPage = () => {
+const createOverviewPage = ({ deleteResponses = [] } = {}) => {
   const dom = new JSDOM(readFrontend("overview.html"), {
     url: "http://localhost/",
     runScripts: "outside-only",
     pretendToBeVisual: true,
   });
   const { window } = dom;
-  const quizzes = dashboardQuizzes();
+  let quizzes = dashboardQuizzes();
+  const deletes = [];
+  const pendingDeleteResponses = [...deleteResponses];
 
   window.matchMedia = () => ({
     matches: false,
@@ -87,13 +89,33 @@ const createOverviewPage = () => {
     removeListener() {},
   });
   window.scrollTo = () => {};
+  window.confirm = () => {
+    throw new Error("Native browser confirmation should not be used");
+  };
   window.document.cookie = `quizite_user=${encodeURIComponent(
     JSON.stringify({ username: "alice" }),
   )}; Path=/`;
   window.document.cookie = "jwt=test-token; Path=/";
 
-  window.fetch = async (url) => {
+  window.fetch = async (url, options = {}) => {
     const requestUrl = String(url);
+
+    if (options.method === "DELETE") {
+      deletes.push({ url: requestUrl, options });
+      const nextResponse = pendingDeleteResponses.shift() || { status: 204 };
+
+      if (nextResponse.status === 204) {
+        const quizId = requestUrl.split("/").pop();
+        quizzes = quizzes.filter((quiz) => quiz.id !== quizId);
+        return { ok: true, status: 204, json: async () => null };
+      }
+
+      return jsonResponse(
+        nextResponse.body || { message: "Could not delete this quiz." },
+        { ok: false, status: nextResponse.status },
+      );
+    }
+
     if (requestUrl.startsWith("/api/overview")) {
       return jsonResponse({
         data: {
@@ -122,7 +144,7 @@ const createOverviewPage = () => {
 
   window.eval(readFrontend("overview.js"));
 
-  return { dom, window };
+  return { dom, window, deletes };
 };
 
 const clickSection = async (window, section) => {
@@ -181,5 +203,145 @@ describe("overview take actions", () => {
 
     expect(takenLocked.textContent).toContain("1 attempt");
     expect(takenLocked.textContent).toContain("Last score: 100%");
+  });
+});
+
+const openDeleteDialog = (window) => {
+  const card = getCard(window, "Quiz: Locked quiz");
+  const trigger = card.querySelector("[data-action='delete']");
+  const modal = window.document.querySelector("#delete-quiz-modal");
+  const dialog = modal.querySelector("[role='dialog']");
+  const cancel = window.document.querySelector("#delete-modal-cancel");
+  const confirm = window.document.querySelector("#delete-modal-confirm");
+
+  trigger.focus();
+  trigger.click();
+
+  return { card, trigger, modal, dialog, cancel, confirm };
+};
+
+describe("overview delete confirmation", () => {
+  it("opens an accessible modal and closes from cancel, backdrop, and Escape", async () => {
+    const { window, deletes } = createOverviewPage();
+
+    await flush();
+
+    const first = openDeleteDialog(window);
+    const description = window.document.querySelector(
+      "#delete-modal-description",
+    );
+
+    expect(first.modal.hidden).toBe(false);
+    expect(first.dialog.getAttribute("aria-modal")).toBe("true");
+    expect(first.dialog.getAttribute("aria-labelledby")).toBe(
+      "delete-modal-title",
+    );
+    expect(first.dialog.getAttribute("aria-describedby")).toBe(
+      "delete-modal-description",
+    );
+    expect(
+      window.document.querySelector("#delete-modal-title").textContent.trim(),
+    ).toBe("Delete this quiz?");
+    expect(
+      window.document.querySelector("#delete-modal-quiz-title").textContent,
+    ).toBe("Locked quiz");
+    expect(description.textContent).toContain("permanently deleted");
+    expect(description.textContent).toContain("cannot be undone");
+    expect(window.document.activeElement).toBe(first.cancel);
+
+    first.confirm.focus();
+    first.confirm.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Tab",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(window.document.activeElement).toBe(first.cancel);
+
+    first.cancel.click();
+    expect(first.modal.hidden).toBe(true);
+    expect(window.document.activeElement).toBe(first.trigger);
+    expect(deletes).toHaveLength(0);
+
+    first.trigger.click();
+    expect(first.modal.hidden).toBe(false);
+    first.modal.dispatchEvent(
+      new window.MouseEvent("click", { bubbles: true }),
+    );
+    expect(first.modal.hidden).toBe(true);
+    expect(window.document.activeElement).toBe(first.trigger);
+
+    first.trigger.click();
+    expect(first.modal.hidden).toBe(false);
+    first.dialog.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(first.modal.hidden).toBe(true);
+    expect(window.document.activeElement).toBe(first.trigger);
+    expect(deletes).toHaveLength(0);
+  });
+
+  it("deletes once, shows progress, removes the card, and shows success", async () => {
+    const { window, deletes } = createOverviewPage();
+
+    await flush();
+
+    const { trigger, modal, confirm } = openDeleteDialog(window);
+    confirm.click();
+
+    expect(confirm.disabled).toBe(true);
+    expect(confirm.textContent.trim()).toBe("Deleting…");
+    expect(deletes).toHaveLength(1);
+
+    confirm.click();
+    expect(deletes).toHaveLength(1);
+
+    await flush();
+
+    expect(modal.hidden).toBe(true);
+    expect(getCard(window, "Quiz: Locked quiz")).toBeNull();
+    expect(deletes[0].url).toBe("/api/quizzes/64b000000000000000000011");
+    expect(deletes[0].options.method).toBe("DELETE");
+    expect(window.document.querySelector("#toast").textContent).toBe(
+      "Quiz deleted.",
+    );
+    expect(window.document.activeElement.id).toBe("main-content");
+    expect(trigger.isConnected).toBe(false);
+  });
+
+  it("keeps the card and modal open on failure, then allows retry", async () => {
+    const { window, deletes } = createOverviewPage({
+      deleteResponses: [
+        { status: 500, body: { message: "Deletion failed" } },
+        { status: 204 },
+      ],
+    });
+
+    await flush();
+
+    const { modal, confirm } = openDeleteDialog(window);
+    confirm.click();
+    await flush();
+
+    const error = window.document.querySelector("#delete-modal-error");
+    expect(modal.hidden).toBe(false);
+    expect(error.hidden).toBe(false);
+    expect(error.textContent).toBe("Deletion failed");
+    expect(getCard(window, "Quiz: Locked quiz")).not.toBeNull();
+    expect(confirm.disabled).toBe(false);
+    expect(confirm.textContent.trim()).toBe("Delete quiz");
+    expect(deletes).toHaveLength(1);
+
+    confirm.click();
+    await flush();
+
+    expect(modal.hidden).toBe(true);
+    expect(getCard(window, "Quiz: Locked quiz")).toBeNull();
+    expect(deletes).toHaveLength(2);
   });
 });

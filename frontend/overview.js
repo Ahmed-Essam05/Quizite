@@ -147,6 +147,9 @@ const readInitialState = () => {
 
 let state = readInitialState();
 let toastTimer;
+let deleteTarget = null;
+let deleteTrigger = null;
+let isDeleting = false;
 const pendingLikes = new Set();
 
 const accountArea = document.querySelector("#account-area");
@@ -156,6 +159,11 @@ const sidebar = document.querySelector("#sidebar");
 const sidebarScrim = document.querySelector(".sidebar-scrim");
 const takenBadge = document.querySelector("#taken-badge");
 const likedBadge = document.querySelector("#liked-badge");
+const deleteModal = document.querySelector("#delete-quiz-modal");
+const deleteModalTitle = document.querySelector("#delete-modal-quiz-title");
+const deleteModalError = document.querySelector("#delete-modal-error");
+const deleteModalCancel = document.querySelector("#delete-modal-cancel");
+const deleteModalConfirm = document.querySelector("#delete-modal-confirm");
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -993,6 +1001,135 @@ const closeAccountMenu = () => {
   }
 };
 
+const setDeleteError = (message = "") => {
+  deleteModalError.textContent = message;
+  deleteModalError.hidden = !message;
+};
+
+const setDeleteBusy = (busy) => {
+  isDeleting = busy;
+  deleteModalConfirm.disabled = busy;
+  deleteModalConfirm.textContent = busy ? "Deleting…" : "Delete quiz";
+  deleteModalCancel.disabled = busy;
+  deleteModal.setAttribute("aria-busy", String(busy));
+};
+
+const openDeleteModal = (quizId, quizTitle, trigger) => {
+  if (isDeleting) return;
+
+  deleteTarget = { quizId, quizTitle };
+  deleteTrigger = trigger;
+  deleteModalTitle.textContent = quizTitle;
+  setDeleteError();
+  setDeleteBusy(false);
+  deleteModal.hidden = false;
+  document.body.classList.add("delete-modal-open");
+  closeAccountMenu();
+  setSidebarOpen(false);
+  deleteModalCancel.focus();
+};
+
+const closeDeleteModal = () => {
+  if (deleteModal.hidden) return;
+
+  const trigger = deleteTrigger;
+  deleteModal.hidden = true;
+  document.body.classList.remove("delete-modal-open");
+  setDeleteError();
+  setDeleteBusy(false);
+  deleteTarget = null;
+  deleteTrigger = null;
+
+  if (trigger?.isConnected) {
+    trigger.focus();
+  } else {
+    document.querySelector("#main-content")?.focus();
+  }
+};
+
+const deleteSelectedQuiz = async () => {
+  if (isDeleting || !deleteTarget) return;
+
+  const { quizId } = deleteTarget;
+  setDeleteError();
+  setDeleteBusy(true);
+
+  try {
+    const response = await fetch(`/api/quizzes/${quizId}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+
+    if (response.status === 204) {
+      if (state.quizzes.length === 1 && state.page > 1) {
+        await loadOverview(state.page - 1);
+      } else {
+        await loadOverview(state.page);
+      }
+      state.taken = null;
+      closeDeleteModal();
+      showToast("Quiz deleted.");
+      return;
+    }
+
+    const payload = await response.json().catch(() => null);
+    setDeleteError(
+      payload?.message || "Could not delete this quiz. Please try again.",
+    );
+    setDeleteBusy(false);
+  } catch {
+    setDeleteError(
+      "A network error occurred while deleting this quiz. Please try again.",
+    );
+    setDeleteBusy(false);
+  }
+};
+
+deleteModalCancel.addEventListener("click", () => {
+  if (!isDeleting) closeDeleteModal();
+});
+
+deleteModalConfirm.addEventListener("click", deleteSelectedQuiz);
+
+deleteModal.addEventListener("click", (event) => {
+  if (event.target === deleteModal && !isDeleting) {
+    closeDeleteModal();
+  }
+});
+
+deleteModal.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isDeleting) closeDeleteModal();
+    return;
+  }
+
+  if (event.key !== "Tab") return;
+
+  const focusable = Array.from(
+    deleteModal.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  );
+  if (focusable.length === 0) return;
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+
+  if (event.shiftKey && (active === first || !deleteModal.contains(active))) {
+    event.preventDefault();
+    last.focus();
+  } else if (
+    !event.shiftKey &&
+    (active === last || !deleteModal.contains(active))
+  ) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
 // Global click delegation
 document.addEventListener("click", async (event) => {
   // 1. Account trigger click
@@ -1093,38 +1230,11 @@ document.addEventListener("click", async (event) => {
   // 8. Delete quiz action
   const deleteButton = event.target.closest("[data-action='delete']");
   if (deleteButton) {
-    const quizId = deleteButton.dataset.quizId;
-    const quizTitle = deleteButton.dataset.quizTitle || "this quiz";
-    const confirmed = window.confirm(
-      `Delete "${quizTitle}"? This cannot be undone.`,
+    openDeleteModal(
+      deleteButton.dataset.quizId,
+      deleteButton.dataset.quizTitle || "this quiz",
+      deleteButton,
     );
-    if (!confirmed) return;
-
-    deleteButton.disabled = true;
-
-    try {
-      const response = await fetch(`/api/quizzes/${quizId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      if (response.status === 204) {
-        showToast("Quiz deleted.");
-        if (state.quizzes.length === 1 && state.page > 1) {
-          await loadOverview(state.page - 1);
-        } else {
-          await loadOverview(state.page);
-        }
-        state.taken = null;
-      } else {
-        const payload = await response.json().catch(() => null);
-        showToast(payload?.message || "Could not delete this quiz.");
-        deleteButton.disabled = false;
-      }
-    } catch {
-      showToast("A network error occurred while deleting this quiz.");
-      deleteButton.disabled = false;
-    }
     return;
   }
 
