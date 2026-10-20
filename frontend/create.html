@@ -16,6 +16,7 @@
     />
     <link rel="stylesheet" href="/overview.css" />
     <link rel="stylesheet" href="/create.css" />
+    <link rel="stylesheet" href="/design-system.css" />
     <script src="/create.js" defer></script>
   </head>
   <body>
@@ -29,7 +30,9 @@
           <span class="brand-title">Quizite</span>
         </a>
         <span class="topbar-divider" aria-hidden="true">/</span>
-        <span class="create-breadcrumb" id="topbar-breadcrumb">Create a quiz</span>
+        <span class="create-breadcrumb" id="topbar-breadcrumb"
+          >Create a quiz</span
+        >
       </div>
 
       <div class="topbar-actions">
@@ -55,9 +58,37 @@
     </header>
 
     <main id="main-content" class="create-main" tabindex="-1">
+      <header class="builder-hero">
+        <div class="builder-hero__content">
+          <p class="builder-hero__eyebrow">Quiz builder</p>
+          <h1>Turn what you know into a quiz worth sharing.</h1>
+          <p>
+            Shape the details, build your questions, then publish a challenge
+            your friends can join with one link or an eight-character code.
+          </p>
+        </div>
+        <ol class="builder-steps" aria-label="Quiz creation steps">
+          <li class="builder-step">
+            <span class="builder-step__num">1</span>
+            Set the details
+          </li>
+          <li class="builder-step">
+            <span class="builder-step__num">2</span>
+            Add questions
+          </li>
+          <li class="builder-step">
+            <span class="builder-step__num">3</span>
+            Publish &amp; share
+          </li>
+        </ol>
+      </header>
+
       <!-- Edit Mode Banner -->
       <div id="edit-mode-banner" class="draft-notice" hidden>
-        <span>You are editing an existing quiz. Changes replace the live quiz when saved.</span>
+        <span
+          >You are editing an existing quiz. Changes replace the live quiz when
+          saved.</span
+        >
       </div>
 
       <!-- Restored Draft Banner -->
@@ -347,7 +378,9 @@
           <div class="field-group">
             <span class="field-label">
               Accepted answers
-              <span class="field-optional">(leave empty to collect without auto-grading)</span>
+              <span class="field-optional"
+                >(leave empty to collect without auto-grading)</span
+              >
             </span>
             <span class="field-hint" id="accepted-answers-hint">
               Matching ignores capitalization and surrounding spaces. Add every
