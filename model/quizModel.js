@@ -11,6 +11,7 @@ import {
   MAX_QUESTIONS_PER_PAGE,
   MAX_TOTAL_QUESTIONS,
 } from "../utils/quizValidation.js";
+import { isValidQuizIconValue } from "../utils/quizIcon.js";
 
 const { Schema } = mongoose;
 
@@ -105,6 +106,14 @@ const quizSchema = new Schema(
       trim: true,
       maxlength: [1000, "A description cannot exceed 1000 characters"],
       default: "",
+    },
+    icon: {
+      type: String,
+      default: null,
+      validate: {
+        validator: (value) => isValidQuizIconValue(value),
+        message: "Invalid quiz icon",
+      },
     },
     shareCode: {
       type: String,

@@ -5,6 +5,7 @@ import QuizAttempt from "../model/quizAttemptModel.js";
 import User from "../model/userModel.js";
 import AppError from "../utils/appError.js";
 import catchAsync from "../utils/catchAsync.js";
+import { serializeQuizIcon } from "../utils/quizIcon.js";
 import { sendToken, validatePassword } from "./authController.js";
 
 const countQuestions = (pages = []) =>
@@ -70,7 +71,7 @@ export const getCompletedQuizzes = catchAsync(async (req, res) => {
   const user = await User.findById(req.user._id).populate({
     path: "completedQuizzes",
     select:
-      "title description status pages likeCount likes allowRetakes updatedAt",
+      "title description icon status pages likeCount likes allowRetakes updatedAt",
   });
 
   const quizzes = (user.completedQuizzes || []).filter(Boolean);
@@ -99,6 +100,7 @@ export const getCompletedQuizzes = catchAsync(async (req, res) => {
         id: quiz._id,
         title: quiz.title,
         description: quiz.description || "",
+        icon: serializeQuizIcon(quiz.icon),
         status: quiz.status,
         questionCount: countQuestions(quiz.pages),
         likeCount: quiz.likeCount || 0,
@@ -139,7 +141,7 @@ export const getLikedQuizzes = catchAsync(async (req, res) => {
     Quiz.countDocuments(filter),
     Quiz.find(filter)
       .select(
-        "title description status pages likeCount owner allowRetakes updatedAt",
+        "title description icon status pages likeCount owner allowRetakes updatedAt",
       )
       .populate("owner", "username")
       .sort({ updatedAt: -1, _id: -1 })
@@ -155,6 +157,7 @@ export const getLikedQuizzes = catchAsync(async (req, res) => {
     id: quiz._id,
     title: quiz.title,
     description: quiz.description || "",
+    icon: serializeQuizIcon(quiz.icon),
     status: quiz.status,
     questionCount: countQuestions(quiz.pages),
     likeCount: quiz.likeCount || 0,

@@ -50,6 +50,14 @@ app.use(cookieParser());
 // overview never depends on database connectivity or request-body processing.
 app.use(express.static(path.join(__dirname, "frontend")));
 
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "uploads"), {
+    maxAge: "1y",
+    immutable: true,
+  }),
+);
+
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "overview.html"));
 });

@@ -17,6 +17,7 @@ const errorMsgEl = document.querySelector("#quiz-error-msg");
 const containerEl = document.querySelector("#quiz-container");
 
 const titleEl = document.querySelector("#quiz-title");
+const quizIconEl = document.querySelector("#quiz-icon");
 const descEl = document.querySelector("#quiz-desc");
 const statusPill = document.querySelector("#quiz-status-pill");
 const qCountEl = document.querySelector("#quiz-q-count");
@@ -100,6 +101,24 @@ const escapeHtml = (value) =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
+const renderQuizIcon = (icon) => {
+  if (!quizIconEl) return;
+  quizIconEl.innerHTML = "";
+
+  if (icon?.type === "upload" && icon.value) {
+    const image = document.createElement("img");
+    image.src = icon.value;
+    image.alt = "";
+    quizIconEl.appendChild(image);
+    quizIconEl.hidden = false;
+    return;
+  }
+
+  quizIconEl.textContent =
+    icon?.type === "emoji" && icon.value ? icon.value : "✨";
+  quizIconEl.hidden = false;
+};
+
 /* --------------------------------------------------------------------------
    Load Quiz Data
    -------------------------------------------------------------------------- */
@@ -162,6 +181,7 @@ const renderQuiz = (quiz, isOwner) => {
 
   document.title = `${quiz.title} — Quizite`;
   titleEl.textContent = quiz.title;
+  renderQuizIcon(quiz.icon);
 
   if (quiz.description) {
     descEl.textContent = quiz.description;
@@ -592,6 +612,7 @@ const submitAnswers = async () => {
     const saved = window.QuiziteResultStore?.save(quizId, {
       ...data.data,
       quizTitle: currentQuizData?.title || "Quiz results",
+      quizIcon: currentQuizData?.icon || null,
     });
 
     if (!saved) {

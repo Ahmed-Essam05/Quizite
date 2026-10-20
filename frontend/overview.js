@@ -32,6 +32,7 @@ const demoQuizzes = [
     id: "demo-1",
     title: "Tiny geography adventure",
     description: "A breezy trip around maps, mountains, and famous places.",
+    icon: { type: "emoji", value: "🎯", reference: "emoji:🎯" },
     questionCount: 8,
     status: "published",
     likeCount: 12,
@@ -45,6 +46,7 @@ const demoQuizzes = [
     id: "demo-2",
     title: "Movie night warm-up",
     description: "How well do you know your popcorn classics?",
+    icon: { type: "emoji", value: "🍿", reference: "emoji:🍿" },
     questionCount: 6,
     status: "draft",
     likeCount: 0,
@@ -277,7 +279,20 @@ const renderAccount = () => {
     </div>`;
 };
 
-const CARD_STICKERS = ["✨", "🚀", "💡", "🎨", "🍿", "🎉", "🌟", "🎈", "🧠", "🎯"];
+const DEFAULT_QUIZ_ICON = "✨";
+
+const renderQuizIcon = (icon) => {
+  if (icon?.type === "upload" && icon.value) {
+    return `<span class="quiz-sticker quiz-sticker--image"><img src="${escapeHtml(icon.value)}" alt="" loading="lazy" /></span>`;
+  }
+
+  const emoji =
+    icon?.type === "emoji" && typeof icon.value === "string"
+      ? icon.value
+      : DEFAULT_QUIZ_ICON;
+
+  return `<span class="quiz-sticker" aria-hidden="true">${escapeHtml(emoji)}</span>`;
+};
 
 const HEART_FILLED_PATH =
   "M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314Z";
@@ -332,7 +347,7 @@ const renderLikeButton = (quiz) => {
     </button>`;
 };
 
-const renderOwnedQuiz = (quiz, index = 0) => {
+const renderOwnedQuiz = (quiz) => {
   const descriptionHtml =
     quiz.description && quiz.description.trim()
       ? `<p class="quiz-description">${escapeHtml(quiz.description.trim())}</p>`
@@ -348,7 +363,6 @@ const renderOwnedQuiz = (quiz, index = 0) => {
   const quizId = quiz.id || quiz._id;
   const status = quiz.status || "published";
   const statusLabel = status === "draft" ? "Draft" : "Published";
-  const sticker = CARD_STICKERS[index % CARD_STICKERS.length];
   const ownerActions = isDemoMode
     ? ""
     : `
@@ -362,7 +376,7 @@ const renderOwnedQuiz = (quiz, index = 0) => {
   return `
     <article class="quiz-card" aria-label="Quiz: ${escapeHtml(quiz.title)}">
       <div class="quiz-card-header">
-        <span class="quiz-sticker" aria-hidden="true">${sticker}</span>
+        ${renderQuizIcon(quiz.icon)}
         <a class="quiz-title" href="/quiz/${quizId}">${escapeHtml(quiz.title)}</a>
         <span class="quiz-pill quiz-pill--${status}">${statusLabel}</span>
         <div class="quiz-card-actions">
@@ -388,7 +402,7 @@ const renderOwnedQuiz = (quiz, index = 0) => {
     </article>`;
 };
 
-const renderTakenQuiz = (quiz, index = 0) => {
+const renderTakenQuiz = (quiz) => {
   const descriptionHtml =
     quiz.description && quiz.description.trim()
       ? `<p class="quiz-description">${escapeHtml(quiz.description.trim())}</p>`
@@ -397,7 +411,6 @@ const renderTakenQuiz = (quiz, index = 0) => {
   const questionCount = quiz.questionCount || 0;
   const questionLabel = questionCount === 1 ? "question" : "questions";
   const completedText = formatRelativeDate(quiz.lastCompletedAt, "Completed");
-  const sticker = CARD_STICKERS[index % CARD_STICKERS.length];
   const attemptsLabel = quiz.attempts === 1 ? "attempt" : "attempts";
   const scoreText =
     quiz.lastPercentage === null || quiz.lastPercentage === undefined
@@ -411,7 +424,7 @@ const renderTakenQuiz = (quiz, index = 0) => {
   return `
     <article class="quiz-card" aria-label="Taken quiz: ${escapeHtml(quiz.title)}">
       <div class="quiz-card-header">
-        <span class="quiz-sticker" aria-hidden="true">${sticker}</span>
+        ${renderQuizIcon(quiz.icon)}
         <a class="quiz-title" href="/quiz/${quiz.id}">${escapeHtml(quiz.title)}</a>
         <span class="quiz-pill quiz-pill--${quiz.status === "draft" ? "draft" : "published"}">${quiz.status === "draft" ? "Draft" : "Published"}</span>
         ${takeActionHtml}
@@ -430,7 +443,7 @@ const renderTakenQuiz = (quiz, index = 0) => {
     </article>`;
 };
 
-const renderLikedQuiz = (quiz, index = 0) => {
+const renderLikedQuiz = (quiz) => {
   const descriptionHtml =
     quiz.description && quiz.description.trim()
       ? `<p class="quiz-description">${escapeHtml(quiz.description.trim())}</p>`
@@ -442,7 +455,6 @@ const renderLikedQuiz = (quiz, index = 0) => {
   const ownerName = quiz.owner?.username
     ? `<span class="quiz-meta-item">by <strong>${escapeHtml(quiz.owner.username)}</strong></span>`
     : "";
-  const sticker = CARD_STICKERS[index % CARD_STICKERS.length];
   const quizId = getQuizId(quiz);
   const takeAction = renderTakeAction(quiz);
   const takeActionHtml = takeAction
@@ -452,7 +464,7 @@ const renderLikedQuiz = (quiz, index = 0) => {
   return `
     <article class="quiz-card" aria-label="Liked quiz: ${escapeHtml(quiz.title)}">
       <div class="quiz-card-header">
-        <span class="quiz-sticker" aria-hidden="true">${sticker}</span>
+        ${renderQuizIcon(quiz.icon)}
         <a class="quiz-title" href="/quiz/${quizId}">${escapeHtml(quiz.title)}</a>
         <span class="quiz-pill quiz-pill--${quiz.status === "draft" ? "draft" : "published"}">${quiz.status === "draft" ? "Draft" : "Published"}</span>
         ${takeActionHtml}
@@ -523,7 +535,7 @@ const renderOwnedPage = () => {
     ${headerHtml}
     <section aria-label="Your quizzes">
       <div class="quiz-list">
-        ${state.quizzes.map((quiz, idx) => renderOwnedQuiz(quiz, idx)).join("")}
+        ${state.quizzes.map((quiz) => renderOwnedQuiz(quiz)).join("")}
       </div>
       ${renderPagination(state.meta)}
     </section>`;
@@ -566,7 +578,7 @@ const renderTakenPage = () => {
     ${headerHtml}
     <section aria-label="Quizzes you have taken">
       <div class="quiz-list">
-        ${state.taken.map((quiz, idx) => renderTakenQuiz(quiz, idx)).join("")}
+        ${state.taken.map((quiz) => renderTakenQuiz(quiz)).join("")}
       </div>
     </section>`;
 };
@@ -624,7 +636,7 @@ const renderLikedPage = () => {
     ${headerHtml}
     <section aria-label="Quizzes you have liked">
       <div class="quiz-list">
-        ${state.liked.map((quiz, idx) => renderLikedQuiz(quiz, idx)).join("")}
+        ${state.liked.map((quiz) => renderLikedQuiz(quiz)).join("")}
       </div>
       ${renderPagination(state.likedMeta, "liked-page")}
     </section>`;

@@ -32,6 +32,7 @@ const buildQuiz = () => ({
   likeCount: 0,
   allowRetakes: false,
   showCorrectAnswers: false,
+  icon: { type: "emoji", value: "🚀", reference: "emoji:🚀" },
   owner: { username: "alice" },
   pages: [
     {
@@ -207,7 +208,6 @@ const baseResult = () => ({
       graded: false,
       isCorrect: false,
       userAnswer: "My written answer",
-      acceptedAnswers: ["Sample answer"],
     },
   ],
 });
@@ -268,6 +268,32 @@ describe("quiz taking page", () => {
     expect(window.getComputedStyle(loading).display).toBe("none");
     expect(container.hidden).toBe(false);
     expect(error.hidden).toBe(true);
+  });
+
+  it("renders the quiz icon returned by the API", async () => {
+    const { window } = createQuizPage(async () => quizSuccessResponse());
+    await flush();
+
+    const icon = window.document.querySelector("#quiz-icon");
+    expect(icon.hidden).toBe(false);
+    expect(icon.textContent.trim()).toBe("🚀");
+  });
+
+  it("renders an uploaded quiz icon as an image", async () => {
+    const quiz = buildQuiz();
+    quiz.icon = {
+      type: "upload",
+      value:
+        "/uploads/quiz-icons/64b000000000000000000001-abcdef0123456789abcdef0123456789.webp",
+      reference:
+        "upload:64b000000000000000000001-abcdef0123456789abcdef0123456789.webp",
+    };
+
+    const { window } = createQuizPage(async () => quizSuccessResponse(quiz));
+    await flush();
+
+    const image = window.document.querySelector("#quiz-icon img");
+    expect(image?.getAttribute("src")).toBe(quiz.icon.value);
   });
 
   it("hides loading and shows the error state when loading fails", async () => {
@@ -389,6 +415,11 @@ describe("quiz taking page", () => {
     expect(stored.quizId).toBe(QUIZ_ID);
     expect(stored.result.score).toBe(1);
     expect(stored.result.quizTitle).toBe("Sample quiz");
+    expect(stored.result.quizIcon).toEqual({
+      type: "emoji",
+      value: "🚀",
+      reference: "emoji:🚀",
+    });
   });
 
   it("keeps the quiz visible and resets submit state when submission fails", async () => {
@@ -716,13 +747,34 @@ describe("quiz results page", () => {
     ).textContent;
     expect(text).toContain("Wrong MCQ");
     expect(text).toContain("Correct answer: 4");
-    expect(text).toContain("Accepted answers: Sample answer");
+    expect(text).not.toContain("Accepted answers");
     expect(text).toContain("Not graded");
     expect(text).toContain("My written answer");
     expect(
       window.document.querySelector("#return-to-quiz-link").textContent.trim(),
     ).toBe("Retake quiz");
     expect(window.sessionStorage.getItem(RESULT_KEY)).not.toBeNull();
+  });
+
+  it("shows only the first accepted answer for an incorrect written response", () => {
+    const result = baseResult();
+    result.results.push({
+      title: "Wrong written response",
+      graded: true,
+      isCorrect: false,
+      userAnswer: "Python",
+      correctAnswer: "JavaScript",
+      acceptedAnswers: ["JavaScript", "JS"],
+    });
+
+    const { window } = createResultsPage({ result });
+    const text = window.document.querySelector(
+      "#results-breakdown-list",
+    ).textContent;
+
+    expect(text).toContain("Correct answer: JavaScript");
+    expect(text).not.toContain("JS");
+    expect(text).not.toContain("Accepted answers");
   });
 
   it("keeps results available after refreshing the same tab", () => {
@@ -738,6 +790,10 @@ describe("quiz results page", () => {
       refreshed.window.document.querySelector("#results-score-count")
         .textContent,
     ).toBe("1");
+    expect(
+      refreshed.window.document.querySelector("#results-breakdown-list")
+        .textContent,
+    ).toContain("Correct answer: 4");
   });
 
   it("never reveals answer keys when showCorrectAnswers is disabled", () => {

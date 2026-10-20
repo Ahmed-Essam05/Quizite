@@ -1,5 +1,6 @@
 import Quiz from "../model/quizModel.js";
 import catchAsync from "../utils/catchAsync.js";
+import { serializeQuizIcon } from "../utils/quizIcon.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -30,7 +31,7 @@ export const getOverview = catchAsync(async (req, res) => {
     Quiz.countDocuments(filter),
     Quiz.find(filter)
       .select(
-        "title description status pages likeCount likes allowRetakes shareCode updatedAt",
+        "title description icon status pages likeCount likes allowRetakes shareCode updatedAt",
       )
       .sort({ updatedAt: -1, _id: -1 })
       .skip((page - 1) * limit)
@@ -46,6 +47,7 @@ export const getOverview = catchAsync(async (req, res) => {
     id: quiz._id,
     title: quiz.title,
     description: quiz.description || "",
+    icon: serializeQuizIcon(quiz.icon),
     status: quiz.status,
     questionCount: (quiz.pages || []).reduce(
       (total, pageItem) => total + (pageItem.questions || []).length,

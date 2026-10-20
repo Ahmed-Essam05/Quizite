@@ -38,9 +38,13 @@ const createPublishResponse = (payload) =>
     { status: 201 },
   );
 
-const createBuilderPage = () => {
+const createBuilderPage = ({
+  url = "http://localhost/create",
+  iconUploadResponse = null,
+  editQuiz = null,
+} = {}) => {
   const dom = new JSDOM(readFrontend("create.html"), {
-    url: "http://localhost/create",
+    url,
     runScripts: "outside-only",
     pretendToBeVisual: true,
   });
@@ -71,6 +75,20 @@ const createBuilderPage = () => {
       return createPublishResponse(JSON.parse(options.body));
     }
 
+    if (String(url) === "/api/quizzes/icon" && options.method === "POST") {
+      return (
+        iconUploadResponse ||
+        jsonResponse(
+          { message: "Could not upload that image." },
+          { ok: false, status: 400 },
+        )
+      );
+    }
+
+    if (editQuiz && String(url) === `/api/quizzes/${editQuiz.id}`) {
+      return jsonResponse({ data: { quiz: editQuiz, isOwner: true } });
+    }
+
     return jsonResponse({ message: "Not found" }, { ok: false, status: 404 });
   };
 
@@ -82,6 +100,37 @@ const createBuilderPage = () => {
 const setInputValue = (window, input, value) => {
   input.value = value;
   input.dispatchEvent(new window.Event("input", { bubbles: true }));
+};
+
+const fillMinimalQuiz = (window, title = "Math quiz") => {
+  setInputValue(window, window.document.querySelector("#quiz-title"), title);
+  setInputValue(
+    window,
+    window.document.querySelector("#question-title"),
+    "What is 2 + 2?",
+  );
+  setInputValue(
+    window,
+    window.document.querySelector('[data-choice-input="0"]'),
+    "3",
+  );
+  setInputValue(
+    window,
+    window.document.querySelector('[data-choice-input="1"]'),
+    "4",
+  );
+  window.document.querySelector("#add-question-btn").click();
+};
+
+const uploadIconFile = async (window, type = "image/png") => {
+  const input = window.document.querySelector("#quiz-icon-upload");
+  const file = new window.File(["fake-image"], "icon.png", { type });
+  Object.defineProperty(input, "files", {
+    configurable: true,
+    value: [file],
+  });
+  input.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await flush();
 };
 
 const selectRadio = (window, radio) => {
@@ -255,5 +304,152 @@ describe("quiz builder validation", () => {
     expect(window.document.querySelector("#share-code-input").value).toBe(
       "A7K9P2XZ",
     );
+  });
+});
+
+describe("quiz builder icons", () => {
+  it("selects a built-in icon and includes it in the saved payload", async () => {
+    const { window, requests } = createBuilderPage();
+    await flush();
+
+    const preview = window.document.querySelector("#quiz-icon-preview");
+    expect(preview.textContent.trim()).toBe("✨");
+    expect(window.document.querySelectorAll(".quiz-icon-option")).toHaveLength(
+      10,
+    );
+    expect(
+      window.document
+        .querySelector('[data-icon-emoji="✨"]')
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+
+    const rocket = window.document.querySelector('[data-icon-emoji="🚀"]');
+    rocket.click();
+    expect(preview.textContent.trim()).toBe("🚀");
+    expect(rocket.getAttribute("aria-checked")).toBe("true");
+    expect(rocket.classList.contains("is-selected")).toBe(true);
+
+    fillMinimalQuiz(window);
+    window.document.querySelector("#publish-quiz-btn").click();
+    await flush();
+
+    const publishRequest = requests.find(
+      (entry) =>
+        entry.url === "/api/quizzes" && entry.options.method === "POST",
+    );
+    expect(JSON.parse(publishRequest.options.body).icon).toBe("emoji:🚀");
+  });
+
+  it("previews and saves a custom icon upload", async () => {
+    const reference =
+      "upload:64b000000000000000000001-abcdef0123456789abcdef0123456789.webp";
+    const value =
+      "/uploads/quiz-icons/64b000000000000000000001-abcdef0123456789abcdef0123456789.webp";
+    const { window, requests } = createBuilderPage({
+      iconUploadResponse: jsonResponse(
+        {
+          data: {
+            icon: { type: "upload", value, reference },
+            reference,
+          },
+        },
+        { status: 201 },
+      ),
+    });
+    window.URL.createObjectURL = () => "blob:icon-preview";
+    window.URL.revokeObjectURL = () => {};
+    await flush();
+
+    await uploadIconFile(window);
+
+    expect(
+      requests.find((entry) => entry.url === "/api/quizzes/icon"),
+    ).toBeTruthy();
+    expect(
+      window.document
+        .querySelector("#quiz-icon-preview img")
+        ?.getAttribute("src"),
+    ).toBe(value);
+    expect(window.document.querySelector("#quiz-icon-status").hidden).toBe(
+      false,
+    );
+
+    fillMinimalQuiz(window);
+    window.document.querySelector("#publish-quiz-btn").click();
+    await flush();
+
+    const publishRequest = requests.find(
+      (entry) =>
+        entry.url === "/api/quizzes" && entry.options.method === "POST",
+    );
+    expect(JSON.parse(publishRequest.options.body).icon).toBe(reference);
+  });
+
+  it("keeps builder data when a custom icon upload fails", async () => {
+    const { window } = createBuilderPage({
+      iconUploadResponse: jsonResponse(
+        { message: "Could not store that icon." },
+        { ok: false, status: 400 },
+      ),
+    });
+    window.URL.createObjectURL = () => "blob:icon-preview";
+    window.URL.revokeObjectURL = () => {};
+    await flush();
+
+    setInputValue(
+      window,
+      window.document.querySelector("#quiz-title"),
+      "Draft kept",
+    );
+    setInputValue(
+      window,
+      window.document.querySelector("#question-title"),
+      "Question kept",
+    );
+
+    await uploadIconFile(window);
+
+    expect(window.document.querySelector("#quiz-title").value).toBe(
+      "Draft kept",
+    );
+    expect(window.document.querySelector("#question-title").value).toBe(
+      "Question kept",
+    );
+    expect(window.document.querySelector("#quiz-icon-error").hidden).toBe(
+      false,
+    );
+    expect(
+      window.document.querySelector("#quiz-icon-error").textContent,
+    ).toContain("Could not store that icon.");
+    expect(
+      window.document.querySelector("#quiz-icon-preview").textContent.trim(),
+    ).toBe("✨");
+  });
+
+  it("loads the existing icon when editing a quiz", async () => {
+    const editQuiz = {
+      id: "64b000000000000000000042",
+      title: "Existing quiz",
+      description: "",
+      status: "published",
+      icon: { type: "emoji", value: "🎯", reference: "emoji:🎯" },
+      pages: [],
+      allowRetakes: false,
+      showCorrectAnswers: false,
+    };
+    const { window } = createBuilderPage({
+      url: "http://localhost/quiz/64b000000000000000000042/edit",
+      editQuiz,
+    });
+    await flush();
+
+    expect(
+      window.document.querySelector("#quiz-icon-preview").textContent.trim(),
+    ).toBe("🎯");
+    expect(
+      window.document
+        .querySelector('[data-icon-emoji="🎯"]')
+        .getAttribute("aria-checked"),
+    ).toBe("true");
   });
 });

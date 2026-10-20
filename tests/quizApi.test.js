@@ -1,6 +1,12 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
+import mongoose from "mongoose";
+import sharp from "sharp";
 import request from "supertest";
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -12,6 +18,10 @@ import app from "../app.js";
 import Quiz from "../model/quizModel.js";
 import QuizAttempt from "../model/quizAttemptModel.js";
 import User from "../model/userModel.js";
+import {
+  MAX_QUIZ_ICON_BYTES,
+  QUIZ_ICONS_DIR,
+} from "../utils/quizIcon.js";
 import { clearTestDB, connectTestDB, disconnectTestDB } from "./helpers/db.js";
 import {
   buildMcqQuestion,
@@ -735,6 +745,7 @@ describe("Quiz API", () => {
 
     it("treats written questions with no accepted answers as ungraded", async () => {
       const created = await createQuizViaApi(alice, {
+        showCorrectAnswers: true,
         questions: [
           buildWrittenQuestion({ acceptedAnswers: [] }),
           buildMcqQuestion(),
@@ -756,6 +767,7 @@ describe("Quiz API", () => {
       expect(response.body.data.score).toBe(1);
       expect(response.body.data.results[0].graded).toBe(false);
       expect(response.body.data.results[0].isCorrect).toBe(false);
+      expect(response.body.data.results[0].correctAnswer).toBeUndefined();
     });
 
     it("hides correct answers unless showCorrectAnswers is enabled", async () => {
@@ -768,7 +780,7 @@ describe("Quiz API", () => {
         .send(buildAnswers(quiz));
 
       expect(hidden.body.data.results[0].correctAnswer).toBeUndefined();
-      expect(hidden.body.data.results[2].acceptedAnswers).toBeUndefined();
+      expect(hidden.body.data.results[2].correctAnswer).toBeUndefined();
 
       await alice
         .patch(`/api/quizzes/${quizId}`)
@@ -779,10 +791,62 @@ describe("Quiz API", () => {
         .send(buildAnswers(quiz));
 
       expect(shown.body.data.results[0].correctAnswer).toBeDefined();
-      expect(shown.body.data.results[2].acceptedAnswers).toEqual([
-        "JavaScript",
-        "JS",
-      ]);
+      expect(shown.body.data.results[2].correctAnswer).toBe("JavaScript");
+      expect(shown.body.data.results[2].acceptedAnswers).toBeUndefined();
+    });
+
+    it("reveals only the first accepted answer for an incorrect written response", async () => {
+      const created = await createGradingQuiz(alice, {
+        showCorrectAnswers: true,
+      });
+      const quizId = created.body.data.quiz.id;
+      const quiz = await fetchQuiz(alice, quizId);
+
+      const answers = buildAnswers(quiz);
+      answers.answers[2].writtenText = "Python";
+
+      const response = await request(server)
+        .post(`/api/quizzes/${quizId}/submit`)
+        .send(answers);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.results[2].isCorrect).toBe(false);
+      expect(response.body.data.results[2].userAnswer).toBe("Python");
+      expect(response.body.data.results[2].correctAnswer).toBe("JavaScript");
+      expect(response.body.data.results[2].acceptedAnswers).toBeUndefined();
+    });
+
+    it("ignores malformed legacy accepted answers when grading and revealing", async () => {
+      const created = await createGradingQuiz(alice, {
+        showCorrectAnswers: true,
+      });
+      const quizId = created.body.data.quiz.id;
+      const quiz = await fetchQuiz(alice, quizId);
+
+      await Quiz.collection.updateOne(
+        { _id: new mongoose.Types.ObjectId(quizId) },
+        {
+          $set: {
+            "pages.0.questions.2.acceptedAnswers": [
+              null,
+              "",
+              " JavaScript ",
+              "JS",
+            ],
+          },
+        },
+      );
+
+      const answers = buildAnswers(quiz);
+      answers.answers[2].writtenText = "javascript";
+
+      const response = await request(server)
+        .post(`/api/quizzes/${quizId}/submit`)
+        .send(answers);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.results[2].isCorrect).toBe(true);
+      expect(response.body.data.results[2].correctAnswer).toBe("JavaScript");
     });
 
     it("rejects malformed answer payloads", async () => {
@@ -809,6 +873,244 @@ describe("Quiz API", () => {
         .send({ answers: [] });
 
       expect(response.status).toBe(403);
+    });
+  });
+
+  describe("quiz icons", () => {
+    const createdIconFiles = [];
+
+    const trackIcon = (reference) => {
+      if (typeof reference === "string" && reference.startsWith("upload:")) {
+        createdIconFiles.push(reference.slice("upload:".length));
+      }
+      return reference;
+    };
+
+    const createIconPng = () =>
+      sharp({
+        create: {
+          width: 48,
+          height: 32,
+          channels: 4,
+          background: { r: 90, g: 60, b: 220, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+    afterEach(async () => {
+      await Promise.all(
+        createdIconFiles.splice(0).map((filename) =>
+          fs.unlink(path.join(QUIZ_ICONS_DIR, filename)).catch(() => {}),
+        ),
+      );
+    });
+
+    it("returns the stable default icon for quizzes without one", async () => {
+      const created = await createQuizViaApi(alice, {
+        questions: [buildMcqQuestion()],
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.data.quiz.icon).toEqual({
+        type: "emoji",
+        value: "✨",
+        reference: null,
+      });
+
+      const quizId = created.body.data.quiz.id;
+      const quiz = await fetchQuiz(alice, quizId);
+      expect(quiz.icon).toEqual({
+        type: "emoji",
+        value: "✨",
+        reference: null,
+      });
+
+      const overview = await alice.get("/api/overview?limit=10");
+      const summary = overview.body.data.quizzes.find(
+        (item) => item.id === quizId,
+      );
+      expect(summary.icon).toEqual({
+        type: "emoji",
+        value: "✨",
+        reference: null,
+      });
+    });
+
+    it("stores built-in icons and preserves them when other fields change", async () => {
+      const created = await createQuizViaApi(alice, {
+        icon: "emoji:🚀",
+        questions: [buildMcqQuestion()],
+      });
+      expect(created.status).toBe(201);
+      const quizId = created.body.data.quiz.id;
+      expect(created.body.data.quiz.icon).toEqual({
+        type: "emoji",
+        value: "🚀",
+        reference: "emoji:🚀",
+      });
+
+      const updated = await alice
+        .patch(`/api/quizzes/${quizId}`)
+        .send({ title: "Renamed quiz" });
+      expect(updated.status).toBe(200);
+      expect(updated.body.data.quiz.icon.value).toBe("🚀");
+
+      const changed = await alice
+        .patch(`/api/quizzes/${quizId}`)
+        .send({ icon: "emoji:🎯" });
+      expect(changed.body.data.quiz.icon.value).toBe("🎯");
+
+      const reset = await alice
+        .patch(`/api/quizzes/${quizId}`)
+        .send({ icon: null });
+      expect(reset.body.data.quiz.icon).toEqual({
+        type: "emoji",
+        value: "✨",
+        reference: null,
+      });
+    });
+
+    it("rejects unsupported icon values", async () => {
+      const unsupported = await createQuizViaApi(alice, {
+        icon: "emoji:💣",
+        questions: [buildMcqQuestion()],
+      });
+      expect(unsupported.status).toBe(400);
+
+      const wrongType = await createQuizViaApi(alice, {
+        icon: 42,
+        questions: [buildMcqQuestion()],
+      });
+      expect(wrongType.status).toBe(400);
+
+      const created = await createQuizViaApi(alice, {
+        questions: [buildMcqQuestion()],
+      });
+      const invalidReference = await alice
+        .patch(`/api/quizzes/${created.body.data.quiz.id}`)
+        .send({ icon: "upload:not-a-real-file.webp" });
+      expect(invalidReference.status).toBe(400);
+    });
+
+    it("uploads, serves, and persists a square custom icon", async () => {
+      const png = await createIconPng();
+      const uploaded = await alice
+        .post("/api/quizzes/icon")
+        .attach("image", png, "icon.png");
+
+      expect(uploaded.status).toBe(201);
+      const reference = trackIcon(uploaded.body.data.reference);
+      expect(reference).toMatch(
+        /^upload:[a-f0-9]{24}-[a-f0-9]{32}\.webp$/,
+      );
+      expect(uploaded.body.data.icon.type).toBe("upload");
+      expect(uploaded.body.data.icon.value).toMatch(
+        /^\/uploads\/quiz-icons\/[a-f0-9]{24}-[a-f0-9]{32}\.webp$/,
+      );
+
+      const served = await request(server).get(
+        uploaded.body.data.icon.value,
+      );
+      expect(served.status).toBe(200);
+      expect(served.headers["content-type"]).toContain("image/webp");
+
+      const metadata = await sharp(served.body).metadata();
+      expect(metadata.format).toBe("webp");
+      expect(metadata.width).toBe(256);
+      expect(metadata.height).toBe(256);
+
+      const created = await createQuizViaApi(alice, {
+        icon: reference,
+        questions: [buildMcqQuestion()],
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.data.quiz.icon.reference).toBe(reference);
+
+      const quizId = created.body.data.quiz.id;
+      const replaced = await alice
+        .patch(`/api/quizzes/${quizId}`)
+        .send({ icon: "emoji:🧠" });
+      expect(replaced.status).toBe(200);
+
+      await expect(
+        fs.access(path.join(QUIZ_ICONS_DIR, reference.slice("upload:".length))),
+      ).rejects.toThrow();
+    });
+
+    it("rejects missing, unsupported, unauthorized, and oversized uploads", async () => {
+      const unauthorized = await request(server).post("/api/quizzes/icon");
+      expect(unauthorized.status).toBe(401);
+
+      const missing = await alice.post("/api/quizzes/icon");
+      expect(missing.status).toBe(400);
+
+      const svg = Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>',
+      );
+      const unsupported = await alice
+        .post("/api/quizzes/icon")
+        .attach("image", svg, "icon.svg");
+      expect(unsupported.status).toBe(400);
+
+      const oversized = await alice
+        .post("/api/quizzes/icon")
+        .attach(
+          "image",
+          Buffer.alloc(MAX_QUIZ_ICON_BYTES + 1),
+          "oversized.png",
+        );
+      expect(oversized.status).toBe(400);
+    });
+
+    it("prevents other users from using or changing a custom icon", async () => {
+      const png = await createIconPng();
+      const uploaded = await alice
+        .post("/api/quizzes/icon")
+        .attach("image", png, "icon.png");
+      const reference = trackIcon(uploaded.body.data.reference);
+
+      const bobCreate = await createQuizViaApi(bob, {
+        icon: reference,
+        questions: [buildMcqQuestion()],
+      });
+      expect(bobCreate.status).toBe(400);
+
+      const created = await createQuizViaApi(alice, {
+        icon: "emoji:🚀",
+        questions: [buildMcqQuestion()],
+      });
+      const quizId = created.body.data.quiz.id;
+
+      const bobPatch = await bob
+        .patch(`/api/quizzes/${quizId}`)
+        .send({ icon: "emoji:🎨" });
+      expect(bobPatch.status).toBe(403);
+
+      const quiz = await fetchQuiz(alice, quizId);
+      expect(quiz.icon.value).toBe("🚀");
+    });
+
+    it("removes an uploaded icon when the quiz is deleted", async () => {
+      const png = await createIconPng();
+      const uploaded = await alice
+        .post("/api/quizzes/icon")
+        .attach("image", png, "icon.png");
+      const reference = trackIcon(uploaded.body.data.reference);
+
+      const created = await createQuizViaApi(alice, {
+        icon: reference,
+        questions: [buildMcqQuestion()],
+      });
+      const quizId = created.body.data.quiz.id;
+      const iconPath = path.join(
+        QUIZ_ICONS_DIR,
+        reference.slice("upload:".length),
+      );
+
+      await expect(fs.access(iconPath)).resolves.toBeUndefined();
+      const deleted = await alice.delete(`/api/quizzes/${quizId}`);
+      expect(deleted.status).toBe(204);
+      await expect(fs.access(iconPath)).rejects.toThrow();
     });
   });
 

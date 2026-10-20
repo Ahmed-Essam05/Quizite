@@ -233,6 +233,64 @@
             </span>
           </label>
         </div>
+
+        <div class="field-group quiz-icon-field">
+          <span class="field-label" id="quiz-icon-label">Quiz icon</span>
+          <div class="quiz-icon-picker">
+            <div
+              class="quiz-icon-preview"
+              id="quiz-icon-preview"
+              aria-hidden="true"
+            ></div>
+            <div class="quiz-icon-controls">
+              <div
+                class="quiz-icon-grid"
+                id="quiz-icon-grid"
+                role="radiogroup"
+                aria-labelledby="quiz-icon-label"
+              ></div>
+              <div class="quiz-icon-actions">
+                <button
+                  class="btn btn-subtle"
+                  type="button"
+                  id="quiz-icon-upload-btn"
+                >
+                  Upload custom image
+                </button>
+                <input
+                  class="quiz-icon-upload-input"
+                  id="quiz-icon-upload"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  tabindex="-1"
+                />
+                <button
+                  class="btn btn-subtle"
+                  type="button"
+                  id="quiz-icon-reset"
+                >
+                  Reset to default
+                </button>
+              </div>
+              <span class="field-hint">
+                PNG, JPEG, or WebP up to 2 MB. Custom images are cropped to a
+                square.
+              </span>
+              <span
+                class="field-error"
+                id="quiz-icon-error"
+                data-field-error
+                hidden
+              ></span>
+              <span
+                class="field-hint quiz-icon-status"
+                id="quiz-icon-status"
+                role="status"
+                hidden
+              ></span>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Question Editor Section -->

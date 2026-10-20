@@ -12,6 +12,10 @@ const MAX_QUIZ_TITLE_LENGTH = 150;
 const MAX_QUIZ_DESCRIPTION_LENGTH = 1000;
 const MAX_QUESTION_TITLE_LENGTH = 2000;
 const MAX_CHOICE_TEXT_LENGTH = 500;
+const MAX_ICON_FILE_BYTES = 2 * 1024 * 1024;
+const QUIZ_ICON_EMOJIS = ["✨", "🚀", "💡", "🎨", "🍿", "🎉", "🌟", "🎈", "🧠", "🎯"];
+const DEFAULT_QUIZ_ICON = "✨";
+const ICON_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 const editMatch = window.location.pathname.match(/^\/quiz\/([^/]+)\/edit\/?$/);
 const editQuizId = editMatch ? editMatch[1] : null;
@@ -21,6 +25,7 @@ const isEditMode = Boolean(editQuizId);
 const quizState = {
   title: "",
   description: "",
+  icon: null,
   status: "published",
   allowRetakes: false,
   showCorrectAnswers: false,
@@ -49,6 +54,13 @@ const addAcceptedAnswerBtn = document.querySelector("#add-accepted-answer-btn");
 
 const allowRetakesInput = document.querySelector("#allow-retakes");
 const showCorrectAnswersInput = document.querySelector("#show-correct-answers");
+const iconGrid = document.querySelector("#quiz-icon-grid");
+const iconPreview = document.querySelector("#quiz-icon-preview");
+const iconUploadBtn = document.querySelector("#quiz-icon-upload-btn");
+const iconUploadInput = document.querySelector("#quiz-icon-upload");
+const iconResetBtn = document.querySelector("#quiz-icon-reset");
+const iconError = document.querySelector("#quiz-icon-error");
+const iconStatus = document.querySelector("#quiz-icon-status");
 const editModeBanner = document.querySelector("#edit-mode-banner");
 const topbarBreadcrumb = document.querySelector("#topbar-breadcrumb");
 
@@ -267,6 +279,236 @@ const escapeHtml = (value) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+
+const getSelectedEmojiIcon = () => {
+  if (
+    typeof quizState.icon === "string" &&
+    quizState.icon.startsWith("emoji:")
+  ) {
+    const emoji = quizState.icon.slice("emoji:".length);
+    if (QUIZ_ICON_EMOJIS.includes(emoji)) return emoji;
+  }
+  if (quizState.icon === null) return DEFAULT_QUIZ_ICON;
+  return null;
+};
+
+const getUploadedIconUrl = () => {
+  if (
+    typeof quizState.icon === "string" &&
+    quizState.icon.startsWith("upload:")
+  ) {
+    const filename = quizState.icon.slice("upload:".length);
+    return /^[a-f0-9]{24}-[a-f0-9]{32}\.webp$/.test(filename)
+      ? `/uploads/quiz-icons/${filename}`
+      : null;
+  }
+  return null;
+};
+
+const renderIconPreview = (overrideUrl = null) => {
+  if (!iconPreview) return;
+  iconPreview.innerHTML = "";
+  const uploadUrl = overrideUrl || getUploadedIconUrl();
+
+  if (uploadUrl) {
+    const image = document.createElement("img");
+    image.src = uploadUrl;
+    image.alt = "";
+    image.addEventListener(
+      "error",
+      () => {
+        iconPreview.textContent = DEFAULT_QUIZ_ICON;
+      },
+      { once: true },
+    );
+    iconPreview.appendChild(image);
+    return;
+  }
+
+  iconPreview.textContent = getSelectedEmojiIcon() || DEFAULT_QUIZ_ICON;
+};
+
+const setIconError = (message) => {
+  if (!iconError) return;
+  iconError.textContent = message;
+  iconError.hidden = false;
+};
+
+const setIconStatus = (message) => {
+  if (!iconStatus) return;
+  iconStatus.textContent = message;
+  iconStatus.hidden = false;
+};
+
+const clearIconFeedback = () => {
+  if (iconError) {
+    iconError.textContent = "";
+    iconError.hidden = true;
+  }
+  if (iconStatus) {
+    iconStatus.textContent = "";
+    iconStatus.hidden = true;
+  }
+};
+
+const renderIconGrid = () => {
+  if (!iconGrid) return;
+  const selected = getSelectedEmojiIcon();
+
+  iconGrid.innerHTML = QUIZ_ICON_EMOJIS.map(
+    (emoji) => `
+      <button
+        class="quiz-icon-option${emoji === selected ? " is-selected" : ""}"
+        type="button"
+        role="radio"
+        aria-checked="${emoji === selected}"
+        aria-label="Use ${emoji} icon"
+        data-icon-emoji="${emoji}"
+        tabindex="${emoji === selected ? "0" : "-1"}"
+      >${emoji}</button>`,
+  ).join("");
+};
+
+const renderIconPicker = (options = {}) => {
+  renderIconGrid();
+  renderIconPreview(options.previewUrl || null);
+};
+
+const syncIconGridSelection = () => {
+  if (!iconGrid) return;
+  const selected = getSelectedEmojiIcon();
+
+  iconGrid.querySelectorAll("[data-icon-emoji]").forEach((button) => {
+    const isSelected = button.dataset.iconEmoji === selected;
+    button.classList.toggle("is-selected", isSelected);
+    button.setAttribute("aria-checked", String(isSelected));
+    button.tabIndex = isSelected ? 0 : -1;
+  });
+};
+
+const selectEmojiIcon = (emoji) => {
+  if (!QUIZ_ICON_EMOJIS.includes(emoji)) return;
+  quizState.icon = `emoji:${emoji}`;
+  clearIconFeedback();
+  syncIconGridSelection();
+  renderIconPreview();
+  saveDraftToStorage();
+};
+
+const uploadIconFile = async (file) => {
+  clearIconFeedback();
+  if (!file) return;
+
+  if (!ICON_MIME_TYPES.has(file.type)) {
+    setIconError("Choose a PNG, JPEG, or WebP image.");
+    return;
+  }
+
+  if (file.size > MAX_ICON_FILE_BYTES) {
+    setIconError("Icon images must be 2 MB or smaller.");
+    return;
+  }
+
+  const localPreviewUrl = URL.createObjectURL(file);
+  renderIconPreview(localPreviewUrl);
+  if (iconUploadBtn) iconUploadBtn.disabled = true;
+  if (iconUploadInput) iconUploadInput.disabled = true;
+  setIconStatus("Uploading icon…");
+
+  const formData = new FormData();
+  formData.append("image", file);
+
+  try {
+    const response = await fetch("/api/quizzes/icon", {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+    const data = await response.json().catch(() => null);
+
+    if (response.status === 401) {
+      setIconError("Please log in to upload an icon.");
+      window.setTimeout(() => {
+        window.location.href = "/login";
+      }, 1200);
+      return;
+    }
+
+    if (!response.ok || !data?.data?.reference) {
+      throw new Error(data?.message || "Could not upload that image.");
+    }
+
+    quizState.icon = data.data.reference;
+    renderIconPicker();
+    saveDraftToStorage();
+    setIconStatus("Custom icon uploaded.");
+  } catch (error) {
+    renderIconPreview();
+    setIconError(
+      error.message || "Could not upload that image. Please try again.",
+    );
+  } finally {
+    URL.revokeObjectURL(localPreviewUrl);
+    if (iconUploadBtn) iconUploadBtn.disabled = false;
+    if (iconUploadInput) {
+      iconUploadInput.disabled = false;
+      iconUploadInput.value = "";
+    }
+  }
+};
+
+iconGrid?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-icon-emoji]");
+  if (!button) return;
+  selectEmojiIcon(button.dataset.iconEmoji);
+});
+
+iconGrid?.addEventListener("keydown", (event) => {
+  if (
+    !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(
+      event.key,
+    )
+  ) {
+    return;
+  }
+
+  const buttons = Array.from(iconGrid.querySelectorAll("[data-icon-emoji]"));
+  if (buttons.length === 0) return;
+
+  const currentIndex = buttons.indexOf(document.activeElement);
+  let nextIndex = currentIndex;
+
+  if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+    nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1;
+  } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+    nextIndex = currentIndex >= buttons.length - 1 ? 0 : currentIndex + 1;
+  } else if (event.key === "Home") {
+    nextIndex = 0;
+  } else if (event.key === "End") {
+    nextIndex = buttons.length - 1;
+  }
+
+  event.preventDefault();
+  const emoji = buttons[nextIndex].dataset.iconEmoji;
+  selectEmojiIcon(emoji);
+  iconGrid.querySelector(`[data-icon-emoji="${emoji}"]`)?.focus();
+});
+
+iconResetBtn?.addEventListener("click", () => {
+  quizState.icon = null;
+  clearIconFeedback();
+  renderIconPicker();
+  saveDraftToStorage();
+  setIconStatus("Default icon restored.");
+});
+
+iconUploadBtn?.addEventListener("click", () => {
+  iconUploadInput?.click();
+});
+
+iconUploadInput?.addEventListener("change", () => {
+  uploadIconFile(iconUploadInput.files?.[0]);
+});
 
 const getMcqSelectedIndex = () => {
   const selected = choicesList.querySelector(
@@ -624,12 +866,18 @@ const restoreDraftFromStorage = () => {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (data && (data.title || (data.questions && data.questions.length > 0))) {
+    if (
+      data &&
+      (data.title ||
+        (data.questions && data.questions.length > 0) ||
+        typeof data.icon === "string")
+    ) {
       quizState.title = data.title || "";
       quizState.description = data.description || "";
       quizState.status = data.status || "published";
       quizState.allowRetakes = Boolean(data.allowRetakes);
       quizState.showCorrectAnswers = Boolean(data.showCorrectAnswers);
+      quizState.icon = typeof data.icon === "string" ? data.icon : null;
       quizState.questions = (Array.isArray(data.questions)
         ? data.questions
         : []
@@ -656,6 +904,7 @@ const restoreDraftFromStorage = () => {
 
       draftNotice.hidden = false;
       renderSavedQuestions();
+      renderIconPicker();
     }
   } catch {
     localStorage.removeItem(STORAGE_KEY);
@@ -669,6 +918,7 @@ clearDraftBtn?.addEventListener("click", () => {
   quizState.status = "published";
   quizState.allowRetakes = false;
   quizState.showCorrectAnswers = false;
+  quizState.icon = null;
   quizState.questions = [];
 
   quizTitleInput.value = "";
@@ -679,7 +929,9 @@ clearDraftBtn?.addEventListener("click", () => {
   draftNotice.hidden = true;
   clearValidationUI();
   validationScope = null;
+  clearIconFeedback();
   renderSavedQuestions();
+  renderIconPicker();
   showToast("Draft discarded.");
 });
 
@@ -1137,6 +1389,7 @@ const submitQuizToServer = async (targetStatus) => {
   const payload = {
     title,
     description: quizDescInput.value.trim(),
+    icon: quizState.icon,
     status: targetStatus,
     allowRetakes: Boolean(allowRetakesInput?.checked),
     showCorrectAnswers: Boolean(showCorrectAnswersInput?.checked),
@@ -1258,6 +1511,7 @@ copyModalCodeBtn.addEventListener("click", () => {
 const applyQuizToBuilder = (quiz) => {
   quizState.title = quiz.title || "";
   quizState.description = quiz.description || "";
+  quizState.icon = quiz.icon?.reference || null;
   quizState.status = quiz.status || "draft";
   quizState.allowRetakes = Boolean(quiz.allowRetakes);
   quizState.showCorrectAnswers = Boolean(quiz.showCorrectAnswers);
@@ -1308,6 +1562,7 @@ const applyQuizToBuilder = (quiz) => {
 
   quizState.questions = questions;
   renderSavedQuestions();
+  renderIconPicker();
 };
 
 const setupEditMode = async () => {
@@ -1377,6 +1632,7 @@ const ensureAuthenticated = async () => {
 
   renderMcqChoices();
   renderAcceptedAnswers();
+  renderIconPicker();
   if (isEditMode) {
     setupEditMode();
   } else {

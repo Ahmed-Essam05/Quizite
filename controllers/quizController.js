@@ -14,6 +14,13 @@ import {
   countQuestions,
   parseQuizPayload,
 } from "../utils/quizValidation.js";
+import {
+  deleteQuizIconFile,
+  isUploadIconReference,
+  quizIconFileExists,
+  saveQuizIconImage,
+  serializeQuizIcon,
+} from "../utils/quizIcon.js";
 
 const isValidIdString = (value) => {
   if (typeof value !== "string") return false;
@@ -81,6 +88,7 @@ const buildQuizDto = (
     username: quiz.owner?.username || "Anonymous",
   },
   questionCount: countQuestions(quiz.pages),
+  icon: serializeQuizIcon(quiz.icon),
   peopleTookCount: quiz.peopleTookCount || 0,
   likeCount: quiz.likeCount || 0,
   allowRetakes: Boolean(quiz.allowRetakes),
@@ -98,7 +106,10 @@ const buildQuizDto = (
 });
 
 export const createQuiz = catchAsync(async (req, res, next) => {
-  const payload = parseQuizPayload(req.body, { requireTitle: true });
+  const payload = parseQuizPayload(req.body, {
+    requireTitle: true,
+    userId: req.user._id,
+  });
   const pages = payload.pages || [];
   const status = payload.status || "draft";
   const totalQuestions = countQuestions(pages);
@@ -109,9 +120,22 @@ export const createQuiz = catchAsync(async (req, res, next) => {
     );
   }
 
+  if (
+    isUploadIconReference(payload.icon) &&
+    !(await quizIconFileExists(payload.icon))
+  ) {
+    return next(
+      new AppError(
+        "The uploaded quiz icon is no longer available. Please upload it again.",
+        400,
+      ),
+    );
+  }
+
   const quiz = new Quiz({
     title: payload.title,
     description: payload.description || "",
+    icon: payload.icon ?? null,
     owner: req.user._id,
     status,
     pages,
@@ -136,6 +160,7 @@ export const createQuiz = catchAsync(async (req, res, next) => {
         description: quiz.description,
         status: quiz.status,
         questionCount: totalQuestions,
+        icon: serializeQuizIcon(quiz.icon),
         allowRetakes: quiz.allowRetakes,
         showCorrectAnswers: quiz.showCorrectAnswers,
         publishedAt: quiz.publishedAt,
@@ -235,6 +260,22 @@ export const getQuizByShareCode = catchAsync(async (req, res, next) => {
   });
 });
 
+export const uploadQuizIcon = catchAsync(async (req, res, next) => {
+  if (!req.file) {
+    return next(new AppError("Please choose an image to upload", 400));
+  }
+
+  const reference = await saveQuizIconImage(req.file.buffer, req.user._id);
+
+  return res.status(201).json({
+    status: "success",
+    data: {
+      icon: serializeQuizIcon(reference),
+      reference,
+    },
+  });
+});
+
 export const updateQuiz = catchAsync(async (req, res, next) => {
   if (!ensureQuizId(req, next)) return undefined;
 
@@ -250,11 +291,12 @@ export const updateQuiz = catchAsync(async (req, res, next) => {
     );
   }
 
-  const payload = parseQuizPayload(req.body);
+  const payload = parseQuizPayload(req.body, { userId: req.user._id });
 
   const recognizedFields = [
     "title",
     "description",
+    "icon",
     "status",
     "pages",
     "allowRetakes",
@@ -267,12 +309,30 @@ export const updateQuiz = catchAsync(async (req, res, next) => {
     );
   }
 
+  if (
+    isUploadIconReference(payload.icon) &&
+    !(await quizIconFileExists(payload.icon))
+  ) {
+    return next(
+      new AppError(
+        "The uploaded quiz icon is no longer available. Please upload it again.",
+        400,
+      ),
+    );
+  }
+
+  const previousIcon = quiz.icon;
+
   if (payload.title !== undefined) {
     quiz.title = payload.title;
   }
 
   if (payload.description !== undefined) {
     quiz.description = payload.description;
+  }
+
+  if (payload.icon !== undefined) {
+    quiz.icon = payload.icon;
   }
 
   if (payload.pages !== undefined) {
@@ -306,6 +366,16 @@ export const updateQuiz = catchAsync(async (req, res, next) => {
 
   await quiz.save();
 
+  if (previousIcon !== quiz.icon) {
+    const stillReferenced = isUploadIconReference(previousIcon)
+      ? await Quiz.exists({ icon: previousIcon, _id: { $ne: quiz._id } })
+      : false;
+
+    if (!stillReferenced) {
+      await deleteQuizIconFile(previousIcon);
+    }
+  }
+
   return res.status(200).json({
     status: "success",
     data: {
@@ -315,6 +385,7 @@ export const updateQuiz = catchAsync(async (req, res, next) => {
         description: quiz.description,
         status: quiz.status,
         questionCount: countQuestions(quiz.pages),
+        icon: serializeQuizIcon(quiz.icon),
         allowRetakes: quiz.allowRetakes,
         showCorrectAnswers: quiz.showCorrectAnswers,
         publishedAt: quiz.publishedAt,
@@ -352,6 +423,13 @@ export const deleteQuiz = catchAsync(async (req, res, next) => {
     ),
     QuizAttempt.deleteMany({ quiz: quiz._id }),
   ]);
+
+  if (isUploadIconReference(quiz.icon)) {
+    const stillReferenced = await Quiz.exists({ icon: quiz.icon });
+    if (!stillReferenced) {
+      await deleteQuizIconFile(quiz.icon);
+    }
+  }
 
   return res.status(204).json({
     status: "success",
@@ -430,13 +508,14 @@ const gradeQuestion = (question, submittedAnswer) => {
   if (isWritten) {
     const userText = submittedAnswer?.writtenText || "";
     const acceptedAnswers = (() => {
-      if (
-        Array.isArray(question.acceptedAnswers) &&
-        question.acceptedAnswers.length > 0
-      ) {
-        return question.acceptedAnswers;
+      if (Array.isArray(question.acceptedAnswers)) {
+        return question.acceptedAnswers
+          .filter((answer) => typeof answer === "string" && answer.trim())
+          .map((answer) => answer.trim());
       }
-      return question.correctText ? [question.correctText] : [];
+      return typeof question.correctText === "string" && question.correctText.trim()
+        ? [question.correctText.trim()]
+        : [];
     })();
 
     const graded = acceptedAnswers.length > 0;
@@ -451,7 +530,7 @@ const gradeQuestion = (question, submittedAnswer) => {
       graded,
       isCorrect,
       userAnswer: userText || "No answer",
-      acceptedAnswers: graded ? acceptedAnswers : [],
+      correctAnswer: graded ? acceptedAnswers[0] : null,
     };
   }
 
@@ -556,9 +635,7 @@ export const submitQuiz = catchAsync(async (req, res, next) => {
         isCorrect: grade.isCorrect,
         userAnswer: grade.userAnswer,
         ...(quiz.showCorrectAnswers && grade.graded
-          ? question.type === "writtenAnswer"
-            ? { acceptedAnswers: grade.acceptedAnswers }
-            : { correctAnswer: grade.correctAnswer }
+          ? { correctAnswer: grade.correctAnswer }
           : {}),
       });
 

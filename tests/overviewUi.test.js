@@ -29,6 +29,7 @@ const dashboardQuizzes = () => [
     id: "64b000000000000000000011",
     title: "Locked quiz",
     description: "Retakes are disabled.",
+    icon: { type: "emoji", value: "🚀", reference: "emoji:🚀" },
     status: "published",
     questionCount: 3,
     likeCount: 1,
@@ -46,6 +47,13 @@ const dashboardQuizzes = () => [
     id: "64b000000000000000000012",
     title: "Retakeable quiz",
     description: "Retakes are enabled.",
+    icon: {
+      type: "upload",
+      value:
+        "/uploads/quiz-icons/64b000000000000000000012-abcdef0123456789abcdef0123456789.webp",
+      reference:
+        "upload:64b000000000000000000012-abcdef0123456789abcdef0123456789.webp",
+    },
     status: "published",
     questionCount: 4,
     likeCount: 1,
@@ -252,6 +260,42 @@ describe("overview take actions", () => {
 
     expect(takenLocked.textContent).toContain("1 attempt");
     expect(takenLocked.textContent).toContain("Last score: 100%");
+  });
+});
+
+describe("overview quiz icons", () => {
+  it("renders built-in, uploaded, and default icons consistently", async () => {
+    const { window } = createOverviewPage();
+    await flush();
+
+    const builtIn = getCard(window, "Quiz: Locked quiz").querySelector(
+      ".quiz-sticker",
+    );
+    expect(builtIn.textContent.trim()).toBe("🚀");
+    expect(builtIn.getAttribute("aria-hidden")).toBe("true");
+
+    const uploaded = getCard(
+      window,
+      "Quiz: Retakeable quiz",
+    ).querySelector(".quiz-sticker--image img");
+    expect(uploaded?.getAttribute("src")).toBe(
+      "/uploads/quiz-icons/64b000000000000000000012-abcdef0123456789abcdef0123456789.webp",
+    );
+
+    const fallback = getCard(
+      window,
+      "Quiz: Uncompleted quiz",
+    ).querySelector(".quiz-sticker");
+    expect(fallback.textContent.trim()).toBe("✨");
+
+    await clickSection(window, "liked");
+    const likedUploaded = getCard(
+      window,
+      "Liked quiz: Retakeable quiz",
+    ).querySelector(".quiz-sticker--image img");
+    expect(likedUploaded?.getAttribute("src")).toBe(
+      uploaded?.getAttribute("src"),
+    );
   });
 });
 

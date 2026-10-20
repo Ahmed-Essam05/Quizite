@@ -13,6 +13,7 @@
   const errorQuizLink = document.querySelector("#error-quiz-link");
   const containerEl = document.querySelector("#results-container");
   const quizTitleEl = document.querySelector("#results-quiz-title");
+  const quizIconEl = document.querySelector("#results-quiz-icon");
   const badgeEl = document.querySelector("#results-badge");
   const titleEl = document.querySelector("#results-title");
   const scoreEl = document.querySelector("#results-score-count");
@@ -78,6 +79,24 @@
     }
   };
 
+  const renderQuizIcon = (icon) => {
+    if (!quizIconEl) return;
+    quizIconEl.innerHTML = "";
+
+    if (icon?.type === "upload" && icon.value) {
+      const image = document.createElement("img");
+      image.src = icon.value;
+      image.alt = "";
+      quizIconEl.appendChild(image);
+      quizIconEl.hidden = false;
+      return;
+    }
+
+    quizIconEl.textContent =
+      icon?.type === "emoji" && icon.value ? icon.value : "✨";
+    quizIconEl.hidden = false;
+  };
+
   const renderScoreTitle = (percentage) => {
     if (percentage >= 80) {
       badgeEl.className = "results-score-badge";
@@ -103,6 +122,7 @@
 
     document.title = `${quizTitle} — Results — Quizite`;
     quizTitleEl.textContent = quizTitle;
+    renderQuizIcon(result.quizIcon);
 
     badgeEl.textContent = `${percentage}%`;
     percentageEl.textContent = `${percentage}%`;
@@ -135,14 +155,6 @@
             ? "✓ Correct"
             : "✕ Incorrect";
 
-        const acceptedAnswers =
-          revealAnswers &&
-          Array.isArray(question.acceptedAnswers) &&
-          question.acceptedAnswers.length > 0
-            ? `<span class="review-answer-line">Accepted answers: <strong class="review-correct-text">${question.acceptedAnswers
-                .map((answer) => escapeHtml(answer))
-                .join(", ")}</strong></span>`
-            : "";
         const correctAnswer =
           revealAnswers &&
           !isUngraded &&
@@ -163,7 +175,6 @@
               <span class="review-answer-line">
                 Your answer: <strong>${escapeHtml(question.userAnswer || "No answer")}</strong>
               </span>
-              ${acceptedAnswers}
               ${correctAnswer}
             </div>
           </div>`;

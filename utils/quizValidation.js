@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 import AppError from "./appError.js";
+import { parseQuizIcon } from "./quizIcon.js";
 
 export const MAX_QUESTIONS_PER_PAGE = 10;
 export const MAX_TOTAL_QUESTIONS = 80;
@@ -434,7 +435,10 @@ export const parsePages = (rawPages, rawQuestions) => {
 export const countQuestions = (pages = []) =>
   pages.reduce((total, page) => total + (page.questions || []).length, 0);
 
-export const parseQuizPayload = (body, { requireTitle = false } = {}) => {
+export const parseQuizPayload = (
+  body,
+  { requireTitle = false, userId } = {},
+) => {
   if (!isPlainObject(body)) {
     fail("Quiz payload must be a JSON object");
   }
@@ -483,6 +487,10 @@ export const parseQuizPayload = (body, { requireTitle = false } = {}) => {
       }
       result[field] = body[field];
     }
+  }
+
+  if (body.icon !== undefined) {
+    result.icon = parseQuizIcon(body.icon, { userId });
   }
 
   if (body.pages !== undefined || body.questions !== undefined) {

@@ -839,6 +839,18 @@ main {
   transform: rotate(-3deg);
 }
 
+.quiz-sticker--image {
+  overflow: hidden;
+  padding: 0;
+}
+
+.quiz-sticker--image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .quiz-card:nth-child(3n + 2) .quiz-sticker {
   background: var(--yellow-soft);
   border-color: rgba(197, 138, 0, 0.18);
