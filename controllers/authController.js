@@ -114,6 +114,24 @@ export const protect = catchAsync(async (req, res, next) => {
   return next();
 });
 
+const redirectToLogin = (req, res) => {
+  const target =
+    req.method === "GET" && typeof req.originalUrl === "string"
+      ? req.originalUrl
+      : "";
+
+  if (
+    target.startsWith("/") &&
+    !target.startsWith("//") &&
+    target !== "/login" &&
+    target !== "/signup"
+  ) {
+    return res.redirect(`/login?next=${encodeURIComponent(target)}`);
+  }
+
+  return res.redirect("/login");
+};
+
 export const protectPage = async (req, res, next) => {
   try {
     let token;
@@ -126,37 +144,37 @@ export const protectPage = async (req, res, next) => {
     }
 
     if (!token || token === "loggedout") {
-      return res.redirect("/login");
+      return redirectToLogin(req, res);
     }
 
     const secret = getJwtSecret();
     if (!secret) {
-      return res.redirect("/login");
+      return redirectToLogin(req, res);
     }
 
     let decoded;
     try {
       decoded = jwt.verify(token, secret);
     } catch {
-      return res.redirect("/login");
+      return redirectToLogin(req, res);
     }
 
     const user = await User.findById(decoded.id).select("+isActive");
     if (!user || !user.isActive) {
-      return res.redirect("/login");
+      return redirectToLogin(req, res);
     }
 
     const passwordChangedAtSeconds = user.passwordChangedAt
       ? Math.floor(user.passwordChangedAt.getTime() / 1000)
       : null;
     if (passwordChangedAtSeconds && passwordChangedAtSeconds > decoded.iat) {
-      return res.redirect("/login");
+      return redirectToLogin(req, res);
     }
 
     req.user = user;
     return next();
   } catch {
-    return res.redirect("/login");
+    return redirectToLogin(req, res);
   }
 };
 

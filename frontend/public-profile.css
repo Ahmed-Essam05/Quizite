@@ -1,0 +1,95 @@
+/* Public profile page styles layered on profile.css and design-system.css */
+
+.public-profile-empty {
+  margin: 0;
+  padding: 22px 16px;
+  color: var(--muted);
+  background-color: var(--canvas);
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.most-liked-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background-color: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.most-liked-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.most-liked-card__title {
+  color: var(--ink);
+  font-family: "Baloo 2", sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+a.most-liked-card__title:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.most-liked-card__likes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.most-liked-card__likes svg {
+  color: var(--danger);
+}
+
+@media (max-width: 480px) {
+  .most-liked-card {
+    align-items: flex-start;
+  }
+}
+
+.top-liked-list {
+  display: grid;
+  gap: 12px;
+}
+
+.most-liked-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.most-liked-card__participants {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.most-liked-card__likes--button {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.most-liked-card__likes--button:hover {
+  color: var(--danger);
+  text-decoration: underline;
+}

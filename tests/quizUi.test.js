@@ -161,6 +161,7 @@ const createQuizPage = (fetchImpl) => {
     configurable: true,
     value: {
       pathname: `/quiz/${QUIZ_ID}`,
+      search: "",
       href: `http://localhost/quiz/${QUIZ_ID}`,
       origin: "http://localhost",
       assign: (target) => navigations.push(target),
@@ -718,6 +719,225 @@ describe("quiz taking page", () => {
     expect(window.document.querySelector("#submit-quiz-btn").disabled).toBe(
       false,
     );
+  });
+
+  it("shows a singular unique participant count", async () => {
+    const quiz = { ...buildQuiz(), peopleTookCount: 1 };
+    const { window } = createQuizPage(async () => quizDataResponse(quiz));
+
+    await flush();
+
+    expect(
+      window.document
+        .querySelector("#quiz-took-wrap")
+        .textContent.replace(/\s+/g, " ")
+        .trim(),
+    ).toBe("1 person tried this");
+  });
+});
+
+describe("quiz likes visibility", () => {
+  const ownerQuizResponse = (quiz) =>
+    jsonResponse({
+      data: {
+        quiz,
+        likedByMe: false,
+        canRetake: true,
+        isOwner: true,
+      },
+    });
+
+  it("lets the creator click the like count and view likers", async () => {
+    const requests = [];
+    const quiz = { ...buildQuiz(), likeCount: 2 };
+    const { window } = createQuizPage(async (url, options = {}) => {
+      const requestUrl = String(url);
+      requests.push({ url: requestUrl, options });
+
+      if (requestUrl === `/api/quizzes/${QUIZ_ID}`) {
+        return ownerQuizResponse(quiz);
+      }
+
+      if (requestUrl === `/api/quizzes/${QUIZ_ID}/likes`) {
+        return jsonResponse({
+          data: {
+            quiz: { id: QUIZ_ID, title: quiz.title },
+            likeCount: 2,
+            likers: [
+              {
+                id: "64b000000000000000000021",
+                username: "bob",
+                profileUrl: "/users/bob",
+              },
+              {
+                id: "64b000000000000000000022",
+                username: "carol",
+                profileUrl: "/users/carol",
+              },
+            ],
+          },
+        });
+      }
+
+      return jsonResponse({ message: "Not found" }, { ok: false, status: 404 });
+    });
+
+    await flush();
+
+    const plainCount = window.document.querySelector("#like-count");
+    const countButton = window.document.querySelector("#like-count-btn");
+    const modal = window.document.querySelector("#quiz-likes-modal");
+
+    expect(plainCount.hidden).toBe(true);
+    expect(countButton.hidden).toBe(false);
+    expect(countButton.textContent.trim()).toBe("2");
+    expect(modal.hidden).toBe(true);
+
+    countButton.focus();
+    countButton.click();
+    await flush();
+
+    const likesRequest = requests.find(
+      (request) => request.url === `/api/quizzes/${QUIZ_ID}/likes`,
+    );
+    expect(likesRequest.options.credentials).toBe("include");
+    expect(modal.hidden).toBe(false);
+    expect(
+      window.document.querySelector("#quiz-likes-modal-title").textContent,
+    ).toBe("Liked by 2 people");
+    expect(
+      window.document.querySelector("#quiz-likes-modal-quiz-title").textContent,
+    ).toBe(quiz.title);
+    expect(
+      Array.from(
+        window.document.querySelectorAll("#quiz-likes-list .likes-name"),
+      ).map((link) => ({
+        text: link.textContent,
+        href: link.getAttribute("href"),
+      })),
+    ).toEqual([
+      { text: "bob", href: "/users/bob" },
+      { text: "carol", href: "/users/carol" },
+    ]);
+    expect(window.document.activeElement).toBe(
+      window.document.querySelector("#quiz-likes-modal-close"),
+    );
+
+    window.document.querySelector("#quiz-likes-modal-close").click();
+
+    expect(modal.hidden).toBe(true);
+    expect(window.document.activeElement).toBe(countButton);
+  });
+
+  it("shows non-creators a plain count and never loads likers", async () => {
+    const requests = [];
+    const quiz = { ...buildQuiz(), likeCount: 4 };
+    const { window } = createQuizPage(async (url, options = {}) => {
+      const requestUrl = String(url);
+      requests.push({ url: requestUrl, options });
+
+      if (requestUrl === `/api/quizzes/${QUIZ_ID}`) {
+        return quizDataResponse(quiz);
+      }
+
+      return jsonResponse({ message: "Not found" }, { ok: false, status: 404 });
+    });
+
+    await flush();
+
+    const plainCount = window.document.querySelector("#like-count");
+    const countButton = window.document.querySelector("#like-count-btn");
+
+    expect(plainCount.hidden).toBe(false);
+    expect(plainCount.textContent).toBe("4");
+    expect(countButton.hidden).toBe(true);
+    expect(
+      window.document.querySelector("#quiz-likes-modal").hidden,
+    ).toBe(true);
+
+    countButton.click();
+    await flush();
+
+    expect(
+      requests.some((request) => request.url.endsWith("/likes")),
+    ).toBe(false);
+    expect(
+      window.document.querySelector("#quiz-likes-modal").hidden,
+    ).toBe(true);
+  });
+
+  it("surfaces liker loading errors and retries for the creator", async () => {
+    let likesAttempts = 0;
+    const quiz = { ...buildQuiz(), likeCount: 1 };
+    const { window } = createQuizPage(async (url) => {
+      const requestUrl = String(url);
+
+      if (requestUrl === `/api/quizzes/${QUIZ_ID}`) {
+        return ownerQuizResponse(quiz);
+      }
+
+      if (requestUrl === `/api/quizzes/${QUIZ_ID}/likes`) {
+        likesAttempts += 1;
+        if (likesAttempts === 1) {
+          return jsonResponse(
+            { message: "Could not load likes right now." },
+            { ok: false, status: 500 },
+          );
+        }
+        return jsonResponse({
+          data: {
+            quiz: { id: QUIZ_ID, title: quiz.title },
+            likeCount: 1,
+            likers: [
+              {
+                id: "64b000000000000000000021",
+                username: "bob",
+                profileUrl: "/users/bob",
+              },
+            ],
+          },
+        });
+      }
+
+      return jsonResponse({ message: "Not found" }, { ok: false, status: 404 });
+    });
+
+    await flush();
+    window.document.querySelector("#like-count-btn").click();
+    await flush();
+
+    const error = window.document.querySelector("#quiz-likes-modal-error");
+    const retry = window.document.querySelector("#quiz-likes-modal-retry");
+    expect(error.hidden).toBe(false);
+    expect(error.textContent).toBe("Could not load likes right now.");
+    expect(retry.hidden).toBe(false);
+
+    retry.click();
+    await flush();
+
+    expect(likesAttempts).toBe(2);
+    expect(error.hidden).toBe(true);
+    expect(retry.hidden).toBe(true);
+    expect(
+      Array.from(
+        window.document.querySelectorAll("#quiz-likes-list .likes-name"),
+      ).map((link) => link.textContent),
+    ).toEqual(["bob"]);
+  });
+
+  it("redirects anonymous visitors to login with the quiz destination", async () => {
+    const { window, navigations } = createQuizPage(async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ message: "Please log in." }),
+    }));
+
+    await flush();
+
+    expect(window.document.querySelector("#like-count-btn").hidden).toBe(true);
+    expect(navigations).toEqual([
+      `/login?next=${encodeURIComponent(`/quiz/${QUIZ_ID}`)}`,
+    ]);
   });
 });
 

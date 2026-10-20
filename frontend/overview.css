@@ -787,6 +787,36 @@ main {
   text-align: center;
 }
 
+.quiz-meta-item--likes {
+  gap: 2px;
+}
+
+.like-count {
+  min-width: 1ch;
+  padding: 0 4px;
+  color: var(--ink-secondary);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.like-count-button {
+  padding: 4px 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.like-count-button:hover {
+  color: #cf222e;
+  background-color: rgba(207, 34, 46, 0.08);
+}
+
 .meta-dot {
   display: inline-block;
   width: 9px;

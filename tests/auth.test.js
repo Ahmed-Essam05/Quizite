@@ -136,6 +136,48 @@ describe("Authentication", () => {
     });
   });
 
+  describe("protected pages", () => {
+    it("redirects anonymous quiz pages to login with the intended destination", async () => {
+      const quizId = "64b000000000000000000001";
+      const target = `/quiz/${quizId}?from=share`;
+      const response = await request(server).get(target);
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe(
+        `/login?next=${encodeURIComponent(target)}`,
+      );
+    });
+
+    it("redirects other protected pages and leaves public pages alone", async () => {
+      const create = await request(server).get("/create");
+      expect(create.status).toBe(302);
+      expect(create.headers.location).toBe(
+        `/login?next=${encodeURIComponent("/create")}`,
+      );
+
+      const profile = await request(server).get("/profile");
+      expect(profile.status).toBe(302);
+      expect(profile.headers.location).toBe(
+        `/login?next=${encodeURIComponent("/profile")}`,
+      );
+
+      const edit = await request(server).get("/quiz/abc/edit");
+      expect(edit.status).toBe(302);
+      expect(edit.headers.location).toBe(
+        `/login?next=${encodeURIComponent("/quiz/abc/edit")}`,
+      );
+
+      const login = await request(server).get("/login");
+      expect(login.status).toBe(200);
+
+      const results = await request(server).get("/quiz/abc/results");
+      expect(results.status).toBe(200);
+
+      const publicProfile = await request(server).get("/users/alice");
+      expect(publicProfile.status).toBe(200);
+    });
+  });
+
   describe("password reset", () => {
     it("returns 503 when email delivery is not configured", async () => {
       const { agent } = await registerAgent({}, server);

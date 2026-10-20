@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="View a Quizite creator's public profile, likes received, and top quizzes."
+    />
+    <title>Quizite — Profile</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/auth.css" />
+    <link rel="stylesheet" href="/profile.css" />
+    <link rel="stylesheet" href="/design-system.css" />
+    <link rel="stylesheet" href="/public-profile.css" />
+    <link rel="stylesheet" href="/likes.css" />
+    <script src="/likesModal.js" defer></script>
+    <script src="/public-profile.js" defer></script>
+  </head>
+  <body data-page="public-profile">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="auth-topbar">
+      <a class="brand" href="/" aria-label="Quizite home">
+        <span class="brand-mark" aria-hidden="true">Q</span>
+        <span class="brand-title">Quizite</span>
+      </a>
+      <div class="topbar-actions">
+        <a class="topbar-link" href="/">Back to dashboard</a>
+        <button
+          class="theme-toggle"
+          type="button"
+          data-theme-toggle
+          aria-label="Switch color theme"
+          title="Switch theme"
+        >
+          <span class="theme-toggle__sun" aria-hidden="true">&#9728;</span>
+          <span class="theme-toggle__moon" aria-hidden="true">&#9790;</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content" class="profile-main" tabindex="-1">
+      <div id="loading-state" class="profile-card profile-card--centered">
+        <p>Loading profile…</p>
+      </div>
+
+      <div id="page-error" class="error-banner" role="alert" hidden></div>
+
+      <div id="profile-content" hidden>
+        <section class="profile-card" aria-labelledby="profile-title">
+          <div class="profile-header">
+            <span id="profile-avatar" class="profile-avatar" aria-hidden="true"
+              >Q</span
+            >
+            <div class="profile-header__info">
+              <h1 id="profile-title" class="profile-username">Quizite user</h1>
+              <p
+                id="profile-membersince"
+                class="profile-meta profile-meta--muted"
+              ></p>
+            </div>
+          </div>
+
+          <div class="profile-stats" aria-label="Public profile statistics">
+            <div class="stat-tile">
+              <span class="stat-tile__value" id="stat-likes-received">0</span>
+              <span class="stat-tile__label">Total likes received</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="profile-card" aria-labelledby="top-liked-title">
+          <h2 id="top-liked-title" class="profile-section-title">
+            Top liked quizzes
+          </h2>
+          <p class="profile-section-hint">
+            The creator's top three published quizzes, ranked by likes and
+            unique participants.
+          </p>
+
+          <div id="top-liked-quizzes" class="top-liked-list"></div>
+          <p id="top-liked-empty" class="public-profile-empty" hidden>
+            No published quizzes yet.
+          </p>
+        </section>
+      </div>
+    </main>
+
+    <!-- Creator-only likers modal -->
+    <div id="likes-modal" class="delete-modal-backdrop" hidden>
+      <div
+        class="delete-modal likes-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="likes-modal-title"
+        aria-describedby="likes-modal-description"
+        tabindex="-1"
+      >
+        <div class="delete-modal__icon likes-modal__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor">
+            <path
+              d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z"
+            ></path>
+          </svg>
+        </div>
+        <h2 id="likes-modal-title" class="delete-modal__title">Liked by</h2>
+        <p id="likes-modal-description" class="delete-modal__description">
+          People who liked &ldquo;<strong id="likes-modal-quiz-title"></strong
+          >&rdquo;.
+        </p>
+
+        <div
+          id="likes-modal-status"
+          class="likes-modal__status"
+          role="status"
+          aria-live="polite"
+        ></div>
+        <p
+          id="likes-modal-error"
+          class="delete-modal__error"
+          role="alert"
+          hidden
+        ></p>
+        <ul
+          id="likes-list"
+          class="likes-list"
+          aria-label="People who liked this quiz"
+        ></ul>
+        <button
+          class="btn likes-modal__retry"
+          type="button"
+          id="likes-modal-retry"
+          hidden
+        >
+          Try again
+        </button>
+
+        <div class="delete-modal__actions">
+          <button class="btn" type="button" id="likes-modal-close">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

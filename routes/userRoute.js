@@ -6,9 +6,12 @@ import {
   getCompletedQuizzes,
   getLikedQuizzes,
   getMe,
+  getPublicProfile,
 } from "../controllers/userController.js";
 
 const router = express.Router();
+
+router.get("/:username/profile", getPublicProfile);
 
 router.use(protect);
 

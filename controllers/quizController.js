@@ -21,6 +21,7 @@ import {
   saveQuizIconImage,
   serializeQuizIcon,
 } from "../utils/quizIcon.js";
+import { getUniqueParticipantCount } from "../utils/participantStats.js";
 
 const isValidIdString = (value) => {
   if (typeof value !== "string") return false;
@@ -78,18 +79,26 @@ const buildQuestionDto = (question, includeAnswerKey) => {
 
 const buildQuizDto = (
   quiz,
-  { includeAnswerKey = false, includeShareCode = false } = {},
+  {
+    includeAnswerKey = false,
+    includeShareCode = false,
+    peopleTookCount,
+  } = {},
 ) => ({
   id: quiz._id,
   title: quiz.title,
   description: quiz.description,
   status: quiz.status,
   owner: {
+    id: quiz.owner?._id || quiz.owner,
     username: quiz.owner?.username || "Anonymous",
   },
   questionCount: countQuestions(quiz.pages),
   icon: serializeQuizIcon(quiz.icon),
-  peopleTookCount: quiz.peopleTookCount || 0,
+  peopleTookCount:
+    typeof peopleTookCount === "number"
+      ? peopleTookCount
+      : quiz.peopleTookCount || 0,
   likeCount: quiz.likeCount || 0,
   allowRetakes: Boolean(quiz.allowRetakes),
   showCorrectAnswers: Boolean(quiz.showCorrectAnswers),
@@ -202,6 +211,7 @@ export const getQuiz = catchAsync(async (req, res, next) => {
         quizId.equals(quiz._id),
       ),
   );
+  const peopleTookCount = await getUniqueParticipantCount(quiz._id);
 
   return res.status(200).json({
     status: "success",
@@ -209,12 +219,65 @@ export const getQuiz = catchAsync(async (req, res, next) => {
       quiz: buildQuizDto(quiz, {
         includeAnswerKey: isOwner,
         includeShareCode: isOwner,
+        peopleTookCount,
       }),
       isOwner,
       likedByMe: Boolean(
         req.user && (quiz.likes || []).some((id) => id.equals(req.user._id)),
       ),
       canRetake: quiz.allowRetakes || !req.user || !alreadyCompleted,
+    },
+  });
+});
+
+export const getQuizLikers = catchAsync(async (req, res, next) => {
+  if (!ensureQuizId(req, next)) return undefined;
+
+  const quiz = await Quiz.findById(req.params.id)
+    .select("title owner likes")
+    .populate({ path: "likes", select: "username" })
+    .lean();
+
+  if (!quiz) {
+    return next(new AppError("No quiz found with that ID", 404));
+  }
+
+  if (!isOwnerOf(quiz, req.user)) {
+    return next(
+      new AppError("You do not have permission to view this quiz's likes", 403),
+    );
+  }
+
+  const seen = new Set();
+  const likers = [];
+
+  for (const liker of quiz.likes || []) {
+    if (!liker?._id || !liker.username) continue;
+    const id = String(liker._id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    likers.push({
+      id: liker._id,
+      username: liker.username,
+      profileUrl: `/users/${encodeURIComponent(liker.username)}`,
+    });
+  }
+
+  likers.sort((first, second) =>
+    first.username.localeCompare(second.username, "en", {
+      sensitivity: "base",
+    }),
+  );
+
+  return res.status(200).json({
+    status: "success",
+    data: {
+      quiz: {
+        id: quiz._id,
+        title: quiz.title,
+      },
+      likeCount: likers.length,
+      likers,
     },
   });
 });
@@ -694,9 +757,7 @@ export const submitQuiz = catchAsync(async (req, res, next) => {
     }
   }
 
-  const freshQuiz = await Quiz.findById(quiz._id)
-    .select("peopleTookCount")
-    .lean();
+  const peopleTookCount = await getUniqueParticipantCount(quiz._id);
 
   return res.status(200).json({
     status: "success",
@@ -709,7 +770,7 @@ export const submitQuiz = catchAsync(async (req, res, next) => {
       showCorrectAnswers: Boolean(quiz.showCorrectAnswers),
       countedForParticipants,
       completedAt,
-      peopleTookCount: freshQuiz?.peopleTookCount || 0,
+      peopleTookCount,
       results: questionResults,
     },
   });

@@ -34,8 +34,10 @@ const dashboardQuizzes = () => [
     questionCount: 3,
     likeCount: 1,
     likedByMe: true,
+    owner: { id: "user-alice", username: "alice" },
     allowRetakes: false,
     completedByMe: true,
+    peopleTookCount: 3,
     attempts: 1,
     lastPercentage: 100,
     lastCompletedAt: now,
@@ -58,8 +60,10 @@ const dashboardQuizzes = () => [
     questionCount: 4,
     likeCount: 1,
     likedByMe: true,
+    owner: { id: "user-alice", username: "alice" },
     allowRetakes: true,
     completedByMe: true,
+    peopleTookCount: 2,
     attempts: 2,
     lastPercentage: 75,
     lastCompletedAt: now,
@@ -75,8 +79,10 @@ const dashboardQuizzes = () => [
     questionCount: 5,
     likeCount: 1,
     likedByMe: true,
+    owner: { id: "user-alice", username: "alice" },
     allowRetakes: false,
     completedByMe: false,
+    peopleTookCount: 1,
     attempts: 0,
     lastPercentage: null,
     lastCompletedAt: null,
@@ -89,7 +95,9 @@ const dashboardQuizzes = () => [
 const createOverviewPage = ({
   deleteResponses = [],
   joinResponses = [],
+  likesResponses = [],
   clipboardWrites = [],
+  quizzes: initialQuizzes = dashboardQuizzes(),
 } = {}) => {
   const dom = new JSDOM(readFrontend("overview.html"), {
     url: "http://localhost/",
@@ -97,12 +105,14 @@ const createOverviewPage = ({
     pretendToBeVisual: true,
   });
   const { window } = dom;
-  let quizzes = dashboardQuizzes();
+  let quizzes = initialQuizzes;
   const deletes = [];
   const joins = [];
+  const likes = [];
   const navigations = [];
   const pendingDeleteResponses = [...deleteResponses];
   const pendingJoinResponses = [...joinResponses];
+  const pendingLikesResponses = [...likesResponses];
 
   window.matchMedia = () => ({
     matches: false,
@@ -137,7 +147,7 @@ const createOverviewPage = ({
     },
   });
   window.document.cookie = `quizite_user=${encodeURIComponent(
-    JSON.stringify({ username: "alice" }),
+    JSON.stringify({ id: "user-alice", username: "alice" }),
   )}; Path=/`;
   window.document.cookie = "jwt=test-token; Path=/";
 
@@ -166,13 +176,28 @@ const createOverviewPage = ({
       const nextResponse = pendingJoinResponses.shift();
       return (
         nextResponse ||
-        jsonResponse({ message: "No quiz found with that code." }, {
-          ok: false,
-          status: 404,
-        })
+        jsonResponse(
+          { message: "No quiz found with that code." },
+          {
+            ok: false,
+            status: 404,
+          },
+        )
       );
     }
 
+    if (/^\/api\/quizzes\/[^/]+\/likes$/.test(requestUrl)) {
+      likes.push({ url: requestUrl, options });
+      const nextResponse = pendingLikesResponses.shift();
+      if (nextResponse) return nextResponse;
+      return jsonResponse({
+        data: {
+          quiz: { id: requestUrl.split("/")[4], title: "Liked quiz" },
+          likeCount: 0,
+          likers: [],
+        },
+      });
+    }
     if (requestUrl.startsWith("/api/overview")) {
       return jsonResponse({
         data: {
@@ -199,9 +224,18 @@ const createOverviewPage = ({
     return jsonResponse({ message: "Not found" }, { ok: false, status: 404 });
   };
 
+  window.eval(readFrontend("likesModal.js"));
   window.eval(readFrontend("overview.js"));
 
-  return { dom, window, deletes, joins, navigations, clipboardWrites };
+  return {
+    dom,
+    window,
+    deletes,
+    joins,
+    likes,
+    navigations,
+    clipboardWrites,
+  };
 };
 
 const clickSection = async (window, section) => {
@@ -230,9 +264,7 @@ describe("overview take actions", () => {
     const ownedUncompleted = getCard(window, "Quiz: Uncompleted quiz");
 
     expect(takeLabels(ownedLocked)).toEqual([]);
-    expect(ownedLocked.querySelector("[data-action='share']")).not.toBe(
-      null,
-    );
+    expect(ownedLocked.querySelector("[data-action='share']")).not.toBe(null);
     expect(takeLabels(ownedRetakeable)).toEqual(["Take again"]);
     expect(takeLabels(ownedUncompleted)).toEqual(["Take quiz"]);
 
@@ -274,18 +306,16 @@ describe("overview quiz icons", () => {
     expect(builtIn.textContent.trim()).toBe("🚀");
     expect(builtIn.getAttribute("aria-hidden")).toBe("true");
 
-    const uploaded = getCard(
-      window,
-      "Quiz: Retakeable quiz",
-    ).querySelector(".quiz-sticker--image img");
+    const uploaded = getCard(window, "Quiz: Retakeable quiz").querySelector(
+      ".quiz-sticker--image img",
+    );
     expect(uploaded?.getAttribute("src")).toBe(
       "/uploads/quiz-icons/64b000000000000000000012-abcdef0123456789abcdef0123456789.webp",
     );
 
-    const fallback = getCard(
-      window,
-      "Quiz: Uncompleted quiz",
-    ).querySelector(".quiz-sticker");
+    const fallback = getCard(window, "Quiz: Uncompleted quiz").querySelector(
+      ".quiz-sticker",
+    );
     expect(fallback.textContent.trim()).toBe("✨");
 
     await clickSection(window, "liked");
@@ -296,6 +326,293 @@ describe("overview quiz icons", () => {
     expect(likedUploaded?.getAttribute("src")).toBe(
       uploaded?.getAttribute("src"),
     );
+  });
+});
+
+describe("overview participant and likes stats", () => {
+  it("shows the unique participant count on owned cards", async () => {
+    const { window } = createOverviewPage();
+
+    await flush();
+
+    const locked = getCard(window, "Quiz: Locked quiz");
+    const retakeable = getCard(window, "Quiz: Retakeable quiz");
+    const uncompleted = getCard(window, "Quiz: Uncompleted quiz");
+
+    expect(
+      locked.querySelector(".quiz-meta-item--participants").textContent.trim(),
+    ).toBe("3 people tried this");
+    expect(
+      retakeable
+        .querySelector(".quiz-meta-item--participants")
+        .textContent.trim(),
+    ).toBe("2 people tried this");
+    expect(
+      uncompleted
+        .querySelector(".quiz-meta-item--participants")
+        .textContent.trim(),
+    ).toBe("1 person tried this");
+  });
+
+  it("renders the creator's like count as a clickable button without a second heart count", async () => {
+    const { window } = createOverviewPage();
+
+    await flush();
+
+    const card = getCard(window, "Quiz: Locked quiz");
+    const count = card.querySelector("[data-like-count-for]");
+    const likeButton = card.querySelector("[data-action='like']");
+
+    expect(count.tagName).toBe("BUTTON");
+    expect(count.classList.contains("like-count-button")).toBe(true);
+    expect(count.getAttribute("data-action")).toBe("likes");
+    expect(count.textContent.trim()).toBe("1");
+    expect(count.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(likeButton.querySelector(".like-button__count")).toBeNull();
+    expect(likeButton.textContent.trim()).toBe("");
+  });
+
+  it("shows non-creators a plain, non-clickable like count", async () => {
+    const quizzes = dashboardQuizzes().map((quiz) => ({
+      ...quiz,
+      owner: { id: "user-someone-else", username: "someone_else" },
+    }));
+    const { window, likes } = createOverviewPage({ quizzes });
+
+    await flush();
+    await clickSection(window, "liked");
+
+    const card = getCard(window, "Liked quiz: Locked quiz");
+    const count = card.querySelector("[data-like-count-for]");
+
+    expect(count.tagName).toBe("SPAN");
+    expect(count.classList.contains("like-count-button")).toBe(false);
+    expect(count.hasAttribute("data-action")).toBe(false);
+    expect(count.hasAttribute("tabindex")).toBe(false);
+    expect(count.textContent.trim()).toBe("1");
+    expect(card.querySelector("[data-action='likes']")).toBeNull();
+
+    count.click();
+    await flush();
+
+    expect(likes).toHaveLength(0);
+    expect(window.document.querySelector("#likes-modal").hidden).toBe(true);
+  });
+
+  it("lets the creator open likers from the liked quizzes section", async () => {
+    const { window, likes } = createOverviewPage();
+
+    await flush();
+    await clickSection(window, "liked");
+
+    const card = getCard(window, "Liked quiz: Locked quiz");
+    const trigger = card.querySelector("[data-action='likes']");
+    expect(trigger).not.toBeNull();
+    expect(trigger.tagName).toBe("BUTTON");
+
+    trigger.click();
+    await flush();
+
+    expect(likes).toHaveLength(1);
+    expect(likes[0].url).toBe("/api/quizzes/64b000000000000000000011/likes");
+    expect(window.document.querySelector("#likes-modal").hidden).toBe(false);
+  });
+
+  it("lets the creator open likers from the taken quizzes section", async () => {
+    const { window, likes } = createOverviewPage();
+
+    await flush();
+    await clickSection(window, "taken");
+
+    const card = getCard(window, "Taken quiz: Locked quiz");
+    const trigger = card.querySelector("[data-action='likes']");
+    expect(trigger).not.toBeNull();
+    expect(trigger.tagName).toBe("BUTTON");
+
+    trigger.click();
+    await flush();
+
+    expect(likes).toHaveLength(1);
+    expect(likes[0].url).toBe("/api/quizzes/64b000000000000000000011/likes");
+    expect(window.document.querySelector("#likes-modal").hidden).toBe(false);
+  });
+
+  it("loads liker identities, renders profiles, and restores focus", async () => {
+    let resolveLikes;
+    const likesResponse = new Promise((resolve) => {
+      resolveLikes = resolve;
+    });
+    const { window, likes } = createOverviewPage({
+      likesResponses: [likesResponse],
+    });
+
+    await flush();
+
+    const card = getCard(window, "Quiz: Locked quiz");
+    const trigger = card.querySelector("[data-action='likes']");
+    const modal = window.document.querySelector("#likes-modal");
+    const dialog = modal.querySelector("[role='dialog']");
+    const list = window.document.querySelector("#likes-list");
+    const status = window.document.querySelector("#likes-modal-status");
+
+    trigger.focus();
+    trigger.click();
+    await flush();
+
+    expect(likes[0].url).toBe("/api/quizzes/64b000000000000000000011/likes");
+    expect(likes[0].options.credentials).toBe("include");
+    expect(modal.hidden).toBe(false);
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(dialog.getAttribute("aria-labelledby")).toBe("likes-modal-title");
+    expect(window.document.activeElement).toBe(
+      window.document.querySelector("#likes-modal-close"),
+    );
+    expect(status.textContent).toBe("Loading likes…");
+    expect(status.hidden).toBe(false);
+
+    resolveLikes(
+      jsonResponse({
+        data: {
+          quiz: { id: "64b000000000000000000011", title: "Locked quiz" },
+          likeCount: 2,
+          likers: [
+            {
+              id: "64b000000000000000000021",
+              username: "bob",
+              profileUrl: "/users/bob",
+            },
+            {
+              id: "64b000000000000000000022",
+              username: "carol",
+              profileUrl: "/users/carol",
+            },
+          ],
+        },
+      }),
+    );
+    await flush();
+
+    expect(
+      window.document.querySelector("#likes-modal-title").textContent,
+    ).toBe("Liked by 2 people");
+    expect(
+      window.document.querySelector("#likes-modal-quiz-title").textContent,
+    ).toBe("Locked quiz");
+    expect(
+      Array.from(list.querySelectorAll(".likes-name")).map((link) => ({
+        text: link.textContent,
+        href: link.getAttribute("href"),
+      })),
+    ).toEqual([
+      { text: "bob", href: "/users/bob" },
+      { text: "carol", href: "/users/carol" },
+    ]);
+    expect(status.hidden).toBe(true);
+
+    dialog.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(modal.hidden).toBe(true);
+    expect(window.document.activeElement).toBe(trigger);
+  });
+
+  it("shows an empty state when nobody has liked the quiz", async () => {
+    const { window } = createOverviewPage();
+
+    await flush();
+
+    getCard(window, "Quiz: Locked quiz")
+      .querySelector("[data-action='likes']")
+      .click();
+    await flush();
+
+    expect(
+      window.document.querySelector("#likes-modal-title").textContent,
+    ).toBe("No likes yet");
+    expect(window.document.querySelector("#likes-list").textContent).toContain(
+      "No likes yet",
+    );
+  });
+
+  it("surfaces errors and retries loading likers", async () => {
+    const { window, likes } = createOverviewPage({
+      likesResponses: [
+        jsonResponse(
+          { message: "Could not load likes right now." },
+          { ok: false, status: 500 },
+        ),
+        jsonResponse({
+          data: {
+            quiz: { id: "64b000000000000000000011", title: "Locked quiz" },
+            likeCount: 1,
+            likers: [
+              {
+                id: "64b000000000000000000021",
+                username: "bob",
+                profileUrl: "/users/bob",
+              },
+            ],
+          },
+        }),
+      ],
+    });
+
+    await flush();
+
+    getCard(window, "Quiz: Locked quiz")
+      .querySelector("[data-action='likes']")
+      .click();
+    await flush();
+
+    const error = window.document.querySelector("#likes-modal-error");
+    const retry = window.document.querySelector("#likes-modal-retry");
+
+    expect(error.hidden).toBe(false);
+    expect(error.textContent).toBe("Could not load likes right now.");
+    expect(retry.hidden).toBe(false);
+
+    retry.click();
+    await flush();
+
+    expect(likes).toHaveLength(2);
+    expect(error.hidden).toBe(true);
+    expect(retry.hidden).toBe(true);
+    expect(
+      Array.from(
+        window.document.querySelectorAll("#likes-list .likes-name"),
+      ).map((link) => link.textContent),
+    ).toEqual(["bob"]);
+  });
+
+  it("closes other open dialogs before opening the likes dialog", async () => {
+    const { window } = createOverviewPage();
+
+    await flush();
+
+    const shareTrigger = getCard(window, "Quiz: Locked quiz").querySelector(
+      "[data-action='share']",
+    );
+    shareTrigger.click();
+
+    expect(window.document.querySelector("#share-quiz-modal").hidden).toBe(
+      false,
+    );
+
+    const likesTrigger = getCard(window, "Quiz: Locked quiz").querySelector(
+      "[data-action='likes']",
+    );
+    likesTrigger.click();
+    await flush();
+
+    expect(window.document.querySelector("#share-quiz-modal").hidden).toBe(
+      true,
+    );
+    expect(window.document.querySelector("#likes-modal").hidden).toBe(false);
   });
 });
 
@@ -416,9 +733,7 @@ describe("overview join by code", () => {
 
     expect(joins).toHaveLength(0);
     expect(error.hidden).toBe(false);
-    expect(error.textContent).toBe(
-      "Enter the complete 8-character quiz code.",
-    );
+    expect(error.textContent).toBe("Enter the complete 8-character quiz code.");
     expect(input.getAttribute("aria-invalid")).toBe("true");
 
     setJoinCode(window, input, "a7k9p2xz");
@@ -479,7 +794,10 @@ describe("overview join by code", () => {
           { ok: false, status: 404 },
         ),
         jsonResponse(
-          { message: "This quiz is currently a private draft and is not public yet." },
+          {
+            message:
+              "This quiz is currently a private draft and is not public yet.",
+          },
           { ok: false, status: 403 },
         ),
       ],

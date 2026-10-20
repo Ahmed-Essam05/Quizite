@@ -15,6 +15,36 @@
 const THEME_KEY = "quizite-theme";
 const page = document.body.dataset.page; // "login" | "signup"
 
+const getSafeNext = (value) => {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("/") ||
+    value.startsWith("//")
+  ) {
+    return "/";
+  }
+
+  try {
+    const target = new URL(value, window.location.origin);
+    if (target.origin !== window.location.origin) return "/";
+    if (
+      !target.pathname.startsWith("/") ||
+      target.pathname.startsWith("//") ||
+      target.pathname === "/login" ||
+      target.pathname === "/signup"
+    ) {
+      return "/";
+    }
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return "/";
+  }
+};
+
+const nextTarget = getSafeNext(
+  new URLSearchParams(window.location.search).get("next"),
+);
+
 /* --------------------------------------------------------------------------
    Theme management (shares localStorage key with overview.js)
    -------------------------------------------------------------------------- */
@@ -298,8 +328,8 @@ if (form) {
         document.cookie = `quizite_user=${encodeURIComponent(JSON.stringify(payload.data.user))}; Path=/; Max-Age=2592000; SameSite=Lax`;
       }
 
-      // Success — redirect to overview page
-      window.location.replace("/");
+      // Success — return to the requested page when available
+      window.location.replace(nextTarget);
     } catch {
       showError(
         "A network error occurred. Please check your connection and try again.",

@@ -24,6 +24,7 @@ const qCountEl = document.querySelector("#quiz-q-count");
 const authorEl = document.querySelector("#quiz-author");
 const authorWrap = document.querySelector("#quiz-author-wrap");
 const tookCountEl = document.querySelector("#quiz-took-count");
+const tookNounEl = document.querySelector("#quiz-took-noun");
 
 const formEl = document.querySelector("#quiz-take-form");
 const questionsArea = document.querySelector("#questions-render-area");
@@ -35,7 +36,28 @@ const submitBtn = document.querySelector("#submit-quiz-btn");
 const shareQuizBtn = document.querySelector("#share-quiz-btn");
 const likeBtn = document.querySelector("#like-btn");
 const likeCountEl = document.querySelector("#like-count");
+const likeCountButtonEl = document.querySelector("#like-count-btn");
+const likeCountButtonValueEl = document.querySelector(
+  "#like-count-button-value",
+);
 const statusNoteEl = document.querySelector("#quiz-status-note");
+
+const quizLikesModal = document.querySelector("#quiz-likes-modal");
+const quizLikesModalTitle = document.querySelector(
+  "#quiz-likes-modal-title",
+);
+const quizLikesModalQuizTitle = document.querySelector(
+  "#quiz-likes-modal-quiz-title",
+);
+const quizLikesModalStatus = document.querySelector(
+  "#quiz-likes-modal-status",
+);
+const quizLikesModalError = document.querySelector("#quiz-likes-modal-error");
+const quizLikesList = document.querySelector("#quiz-likes-list");
+const quizLikesModalRetry = document.querySelector(
+  "#quiz-likes-modal-retry",
+);
+const quizLikesModalClose = document.querySelector("#quiz-likes-modal-close");
 
 const unansweredModal = document.querySelector("#unanswered-modal");
 const unansweredModalMessage = document.querySelector(
@@ -47,9 +69,12 @@ const submitAnywayBtn = document.querySelector("#submit-anyway-btn");
 let currentQuizData = null;
 let likedByMe = false;
 let canRetake = true;
+let isOwnerView = false;
 let currentPageIndex = 0;
 let isSubmitting = false;
 let lastFocusedBeforeModal = null;
+let likesRequestId = 0;
+let likesTrigger = null;
 
 /* --------------------------------------------------------------------------
    Theme management
@@ -128,6 +153,11 @@ const getQuizIdFromUrl = () => {
   return segments[segments.length - 1];
 };
 
+const redirectToLogin = () => {
+  const next = `${window.location.pathname}${window.location.search}`;
+  window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+};
+
 const loadQuiz = async () => {
   resetSubmitState();
   loadingEl.hidden = false;
@@ -145,10 +175,15 @@ const loadQuiz = async () => {
       credentials: "include",
     });
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
+
+    if (response.status === 401) {
+      redirectToLogin();
+      return;
+    }
 
     if (!response.ok) {
-      showQuizError(data.message || "Failed to load quiz.");
+      showQuizError(data?.message || "Failed to load quiz.");
       return;
     }
 
@@ -174,10 +209,26 @@ const showQuizError = (message) => {
    Render Quiz
    -------------------------------------------------------------------------- */
 
+const setLikeCountDisplay = (count) => {
+  const safeCount = Math.max(Number(count) || 0, 0);
+  if (likeCountEl) likeCountEl.textContent = String(safeCount);
+  if (likeCountButtonValueEl) {
+    likeCountButtonValueEl.textContent = String(safeCount);
+  }
+  if (likeCountButtonEl) {
+    const noun = safeCount === 1 ? "person" : "people";
+    likeCountButtonEl.setAttribute(
+      "aria-label",
+      `View ${safeCount} ${noun} who liked this quiz`,
+    );
+  }
+};
+
 const renderQuiz = (quiz, isOwner) => {
   loadingEl.hidden = true;
   errorEl.hidden = true;
   containerEl.hidden = false;
+  isOwnerView = Boolean(isOwner);
 
   document.title = `${quiz.title} — Quizite`;
   titleEl.textContent = quiz.title;
@@ -204,18 +255,26 @@ const renderQuiz = (quiz, isOwner) => {
     authorWrap.hidden = true;
   }
 
-  tookCountEl.textContent = String(quiz.peopleTookCount || 0);
+  const peopleTookCount = Number(quiz.peopleTookCount) || 0;
+  tookCountEl.textContent = String(peopleTookCount);
+  if (tookNounEl) {
+    tookNounEl.textContent = peopleTookCount === 1 ? "person" : "people";
+  }
 
-  // Like button state
+  // Like button state. Only the creator gets a clickable count.
   if (likeBtn) {
     likeBtn.hidden = false;
     likeBtn.classList.toggle("is-liked", likedByMe);
     likeBtn.setAttribute("aria-pressed", String(likedByMe));
+    likeBtn.setAttribute(
+      "aria-label",
+      likedByMe ? "Remove your like" : "Like this quiz",
+    );
     likeBtn.title = likedByMe ? "Remove your like" : "Like this quiz";
   }
-  if (likeCountEl) {
-    likeCountEl.textContent = String(quiz.likeCount || 0);
-  }
+  if (likeCountEl) likeCountEl.hidden = isOwnerView;
+  if (likeCountButtonEl) likeCountButtonEl.hidden = !isOwnerView;
+  setLikeCountDisplay(quiz.likeCount);
 
   formEl.hidden = !canRetake;
   statusNoteEl.hidden = canRetake;
@@ -435,6 +494,7 @@ const closeUnansweredModal = ({ restoreFocus = true } = {}) => {
 const openUnansweredModal = (unanswered) => {
   if (!unansweredModal || unanswered.length === 0) return false;
 
+  closeQuizLikesModal({ restoreFocus: false });
   updateUnansweredIndicators(unanswered);
   unansweredModalMessage.textContent = `You haven't answered ${formatQuestionNumbers(
     unanswered.map((question) => question.number),
@@ -653,8 +713,192 @@ const copyShareLink = () => {
 shareQuizBtn?.addEventListener("click", copyShareLink);
 
 /* --------------------------------------------------------------------------
+   Creator-only likers modal
+   -------------------------------------------------------------------------- */
+
+const setQuizLikesStatus = (message = "") => {
+  if (!quizLikesModalStatus) return;
+  quizLikesModalStatus.textContent = message;
+  quizLikesModalStatus.hidden = !message;
+};
+
+const setQuizLikesError = (message = "") => {
+  if (!quizLikesModalError) return;
+  quizLikesModalError.textContent = message;
+  quizLikesModalError.hidden = !message;
+};
+
+const renderQuizLikers = (likers) => {
+  if (!quizLikesList) return;
+
+  if (!Array.isArray(likers) || likers.length === 0) {
+    quizLikesList.innerHTML =
+      '<li class="likes-list__empty">No likes yet. When someone likes this quiz, they will appear here.</li>';
+    return;
+  }
+
+  quizLikesList.innerHTML = likers
+    .filter((liker) => liker && liker.username)
+    .map((liker) => {
+      const username = escapeHtml(liker.username);
+      const initial = username.charAt(0).toUpperCase() || "U";
+      const profileUrl = escapeHtml(
+        liker.profileUrl || `/users/${encodeURIComponent(liker.username)}`,
+      );
+      const avatar = liker.avatarUrl
+        ? `<img src="${escapeHtml(liker.avatarUrl)}" alt="" loading="lazy" />`
+        : initial;
+
+      return `
+        <li class="likes-list__item">
+          <span class="likes-avatar" aria-hidden="true">${avatar}</span>
+          <a class="likes-name" href="${profileUrl}">${username}</a>
+        </li>`;
+    })
+    .join("");
+};
+
+const closeQuizLikesModal = ({ restoreFocus = true } = {}) => {
+  if (!quizLikesModal || quizLikesModal.hidden) return;
+
+  const trigger = likesTrigger;
+  likesRequestId += 1;
+  likesTrigger = null;
+  quizLikesModal.hidden = true;
+  document.body.classList.remove("delete-modal-open");
+  quizLikesModal.removeAttribute("aria-busy");
+  setQuizLikesStatus();
+  setQuizLikesError();
+  if (quizLikesModalRetry) quizLikesModalRetry.hidden = true;
+  if (quizLikesList) quizLikesList.innerHTML = "";
+
+  if (restoreFocus && trigger?.isConnected) {
+    trigger.focus();
+  }
+};
+
+const loadQuizLikers = async () => {
+  if (!isOwnerView || !currentQuizData) return;
+
+  const quizId = currentQuizData.id || getQuizIdFromUrl();
+  if (!quizId) return;
+
+  const requestId = ++likesRequestId;
+  setQuizLikesError();
+  setQuizLikesStatus("Loading likes…");
+  if (quizLikesModalRetry) quizLikesModalRetry.hidden = true;
+  if (quizLikesList) quizLikesList.innerHTML = "";
+  quizLikesModal?.setAttribute("aria-busy", "true");
+
+  try {
+    const response = await fetch(`/api/quizzes/${quizId}/likes`, {
+      credentials: "include",
+    });
+    const payload = await response.json().catch(() => null);
+
+    if (requestId !== likesRequestId) return;
+
+    if (response.status === 401) {
+      closeQuizLikesModal({ restoreFocus: false });
+      redirectToLogin();
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        payload?.message || "Could not load likes. Please try again.",
+      );
+    }
+
+    const likers = Array.isArray(payload?.data?.likers)
+      ? payload.data.likers
+      : [];
+    const likeCount = Number(payload?.data?.likeCount ?? likers.length) || 0;
+
+    setQuizLikesStatus();
+    renderQuizLikers(likers);
+    if (quizLikesModalTitle) {
+      quizLikesModalTitle.textContent =
+        likeCount === 0
+          ? "No likes yet"
+          : `Liked by ${likeCount} ${likeCount === 1 ? "person" : "people"}`;
+    }
+  } catch (error) {
+    if (requestId !== likesRequestId) return;
+    setQuizLikesStatus();
+    setQuizLikesError(
+      error.message || "A network error occurred while loading likes.",
+    );
+    if (quizLikesModalRetry) quizLikesModalRetry.hidden = false;
+  } finally {
+    if (requestId === likesRequestId) {
+      quizLikesModal?.removeAttribute("aria-busy");
+    }
+  }
+};
+
+const openQuizLikesModal = () => {
+  if (!isOwnerView || !quizLikesModal || !currentQuizData) return;
+
+  closeUnansweredModal({ restoreFocus: false });
+  likesTrigger =
+    document.activeElement instanceof window.HTMLElement
+      ? document.activeElement
+      : likeCountButtonEl;
+  if (quizLikesModalTitle) quizLikesModalTitle.textContent = "Liked by";
+  if (quizLikesModalQuizTitle) {
+    quizLikesModalQuizTitle.textContent = currentQuizData.title || "this quiz";
+  }
+  quizLikesModal.hidden = false;
+  document.body.classList.add("delete-modal-open");
+  quizLikesModalClose?.focus({ preventScroll: true });
+  loadQuizLikers();
+};
+
+quizLikesModalClose?.addEventListener("click", () => closeQuizLikesModal());
+quizLikesModalRetry?.addEventListener("click", loadQuizLikers);
+
+quizLikesModal?.addEventListener("click", (event) => {
+  if (event.target === quizLikesModal) closeQuizLikesModal();
+});
+
+quizLikesModal?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeQuizLikesModal();
+    return;
+  }
+
+  if (event.key !== "Tab") return;
+
+  const focusable = Array.from(
+    quizLikesModal.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  );
+  if (focusable.length === 0) return;
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+
+  if (event.shiftKey && (active === first || !quizLikesModal.contains(active))) {
+    event.preventDefault();
+    last.focus();
+  } else if (
+    !event.shiftKey &&
+    (active === last || !quizLikesModal.contains(active))
+  ) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
+/* --------------------------------------------------------------------------
    Like / Unlike
    -------------------------------------------------------------------------- */
+
+likeCountButtonEl?.addEventListener("click", openQuizLikesModal);
 
 likeBtn?.addEventListener("click", async () => {
   const quizId = getQuizIdFromUrl();
@@ -673,7 +917,7 @@ likeBtn?.addEventListener("click", async () => {
     if (response.status === 401) {
       showToast("Please log in to like quizzes.");
       window.setTimeout(() => {
-        window.location.href = "/login";
+        redirectToLogin();
       }, 900);
       return;
     }
@@ -684,9 +928,13 @@ likeBtn?.addEventListener("click", async () => {
     }
 
     likedByMe = Boolean(data?.data?.liked);
-    likeCountEl.textContent = String(data?.data?.likeCount ?? 0);
+    setLikeCountDisplay(data?.data?.likeCount ?? 0);
     likeBtn.classList.toggle("is-liked", likedByMe);
     likeBtn.setAttribute("aria-pressed", String(likedByMe));
+    likeBtn.setAttribute(
+      "aria-label",
+      likedByMe ? "Remove your like" : "Like this quiz",
+    );
     likeBtn.title = likedByMe ? "Remove your like" : "Like this quiz";
   } catch {
     showToast("A network error occurred while updating your like.");

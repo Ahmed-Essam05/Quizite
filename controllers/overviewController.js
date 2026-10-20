@@ -1,6 +1,7 @@
 import Quiz from "../model/quizModel.js";
 import catchAsync from "../utils/catchAsync.js";
 import { serializeQuizIcon } from "../utils/quizIcon.js";
+import { getUniqueParticipantCounts } from "../utils/participantStats.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -31,7 +32,7 @@ export const getOverview = catchAsync(async (req, res) => {
     Quiz.countDocuments(filter),
     Quiz.find(filter)
       .select(
-        "title description icon status pages likeCount likes allowRetakes shareCode updatedAt",
+        "title description icon status pages likeCount likes allowRetakes shareCode peopleTookCount updatedAt",
       )
       .sort({ updatedAt: -1, _id: -1 })
       .skip((page - 1) * limit)
@@ -42,6 +43,9 @@ export const getOverview = catchAsync(async (req, res) => {
 
   const completedQuizIds = new Set(
     (req.user.completedQuizzes || []).map(String),
+  );
+  const participantCounts = await getUniqueParticipantCounts(
+    quizzes.map((quiz) => quiz._id),
   );
   const quizSummaries = quizzes.map((quiz) => ({
     id: quiz._id,
@@ -55,8 +59,13 @@ export const getOverview = catchAsync(async (req, res) => {
     ),
     likeCount: quiz.likeCount || 0,
     likedByMe: (quiz.likes || []).some((userId) => userId.equals(req.user._id)),
+    peopleTookCount: participantCounts.get(String(quiz._id)) || 0,
     allowRetakes: Boolean(quiz.allowRetakes),
     completedByMe: completedQuizIds.has(String(quiz._id)),
+    owner: {
+      id: req.user._id,
+      username: req.user.username,
+    },
     updatedAt: quiz.updatedAt,
     shareUrl: `/quiz/${quiz._id}`,
     shareCode: quiz.shareCode,

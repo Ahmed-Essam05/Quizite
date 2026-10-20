@@ -6,6 +6,7 @@ import User from "../model/userModel.js";
 import AppError from "../utils/appError.js";
 import catchAsync from "../utils/catchAsync.js";
 import { serializeQuizIcon } from "../utils/quizIcon.js";
+import { getUniqueParticipantCounts } from "../utils/participantStats.js";
 import { sendToken, validatePassword } from "./authController.js";
 
 const countQuestions = (pages = []) =>
@@ -67,11 +68,83 @@ export const getMe = catchAsync(async (req, res) => {
   });
 });
 
+export const getPublicProfile = catchAsync(async (req, res, next) => {
+  const username = String(req.params.username || "").trim();
+
+  if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+    return next(new AppError("No user found with that username.", 404));
+  }
+
+  const user = await User.findOne({ username })
+    .select("_id username createdAt")
+    .lean();
+
+  if (!user) {
+    return next(new AppError("No user found with that username.", 404));
+  }
+
+  const quizzes = await Quiz.find({ owner: user._id })
+    .select("title icon status likes")
+    .lean();
+
+  const totalLikesReceived = quizzes.reduce(
+    (total, quiz) =>
+      total + new Set((quiz.likes || []).map((like) => String(like))).size,
+    0,
+  );
+
+  const publishedQuizzes = quizzes.filter(
+    (quiz) => quiz.status === "published",
+  );
+  const participantCounts = await getUniqueParticipantCounts(
+    publishedQuizzes.map((quiz) => quiz._id),
+  );
+  const titleCollator = new Intl.Collator("en", { sensitivity: "base" });
+
+  const topLikedQuizzes = publishedQuizzes
+    .map((quiz) => ({
+      id: quiz._id,
+      title: quiz.title || "",
+      icon: serializeQuizIcon(quiz.icon),
+      likeCount: new Set((quiz.likes || []).map((like) => String(like))).size,
+      peopleTookCount: participantCounts.get(String(quiz._id)) || 0,
+      shareUrl: `/quiz/${quiz._id}`,
+      owner: {
+        id: user._id,
+        username: user.username,
+      },
+    }))
+    .sort(
+      (a, b) =>
+        b.likeCount - a.likeCount ||
+        b.peopleTookCount - a.peopleTookCount ||
+        titleCollator.compare(a.title, b.title) ||
+        String(a.id).localeCompare(String(b.id)),
+    )
+    .slice(0, 3);
+
+  return res.status(200).json({
+    status: "success",
+    data: {
+      user: {
+        id: user._id,
+        username: user.username,
+        memberSince: user.createdAt,
+      },
+      stats: {
+        totalLikesReceived,
+      },
+      topLikedQuizzes,
+    },
+  });
+});
+
 export const getCompletedQuizzes = catchAsync(async (req, res) => {
   const user = await User.findById(req.user._id).populate({
     path: "completedQuizzes",
     select:
-      "title description icon status pages likeCount likes allowRetakes updatedAt",
+      "title description icon status pages likeCount likes allowRetakes updatedAt owner",
+    populate: { path: "owner", select: "username" },
   });
 
   const quizzes = (user.completedQuizzes || []).filter(Boolean);
@@ -108,6 +181,10 @@ export const getCompletedQuizzes = catchAsync(async (req, res) => {
           userId.equals(req.user._id),
         ),
         allowRetakes: Boolean(quiz.allowRetakes),
+        owner: {
+          id: quiz.owner?._id || quiz.owner,
+          username: quiz.owner?.username || "Anonymous",
+        },
         completedByMe: true,
         attempts: stats.attempts || 0,
         lastPercentage: stats.lastPercentage ?? null,
@@ -165,6 +242,7 @@ export const getLikedQuizzes = catchAsync(async (req, res) => {
     allowRetakes: Boolean(quiz.allowRetakes),
     completedByMe: completedQuizIds.has(String(quiz._id)),
     owner: {
+      id: quiz.owner?._id || quiz.owner,
       username: quiz.owner?.username || "Anonymous",
     },
     updatedAt: quiz.updatedAt,

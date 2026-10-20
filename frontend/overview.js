@@ -34,10 +34,11 @@ const demoQuizzes = [
     description: "A breezy trip around maps, mountains, and famous places.",
     icon: { type: "emoji", value: "🎯", reference: "emoji:🎯" },
     questionCount: 8,
+    peopleTookCount: 14,
     status: "published",
     likeCount: 12,
     likedByMe: true,
-    owner: { username: "Maya" },
+    owner: { id: "demo-user", username: "Maya" },
     updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     shareUrl: "/quiz/demo-1",
     shareCode: "A7K9P2XZ",
@@ -48,10 +49,11 @@ const demoQuizzes = [
     description: "How well do you know your popcorn classics?",
     icon: { type: "emoji", value: "🍿", reference: "emoji:🍿" },
     questionCount: 6,
+    peopleTookCount: 3,
     status: "draft",
     likeCount: 0,
     likedByMe: false,
-    owner: { username: "Maya" },
+    owner: { id: "demo-user", username: "Maya" },
     updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
     shareUrl: "/quiz/demo-2",
     shareCode: "M4Q8R2TX",
@@ -60,7 +62,7 @@ const demoQuizzes = [
 
 const demoState = {
   authenticated: true,
-  user: { username: "Maya" },
+  user: { id: "demo-user", username: "Maya" },
   quizzes: demoQuizzes,
   meta: null,
   taken: null,
@@ -187,6 +189,15 @@ const joinCodeInput = document.querySelector("#join-code-input");
 const joinCodeError = document.querySelector("#join-code-error");
 const joinModalCancel = document.querySelector("#join-modal-cancel");
 const joinModalSubmit = document.querySelector("#join-modal-submit");
+const likesModalController = window.QuiziteLikesModal?.create({
+  onOpen: () => {
+    closeDeleteModal();
+    closeShareModal();
+    closeJoinModal();
+    closeAccountMenu();
+    setSidebarOpen(false);
+  },
+});
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -268,6 +279,12 @@ const renderAccount = () => {
           </svg>
           Profile information
         </button>
+        <button class="account-dropdown-item" type="button" data-account-action="public-profile" role="menuitem">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7.25-3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM8 6.5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 6.5Z"></path>
+          </svg>
+          Public profile
+        </button>
         <div class="account-dropdown-divider" role="separator"></div>
         <button class="account-dropdown-item" type="button" data-account-action="logout" role="menuitem">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -315,11 +332,42 @@ const renderTakeAction = (quiz) => {
   return "";
 };
 
-const renderLikeButton = (quiz) => {
+const renderParticipantStat = (quiz) => {
+  const count = Number(quiz.peopleTookCount) || 0;
+  const noun = count === 1 ? "person" : "people";
+
+  return `
+    <span class="quiz-meta-item quiz-meta-item--participants" title="Unique people who completed this quiz">
+      <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
+        <path d="M5.5 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Zm5 .5a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM1.5 13.25c0-2.07 1.79-3.75 4-3.75s4 1.68 4 3.75a.75.75 0 0 1-1.5 0c0-1.24-1.12-2.25-2.5-2.25s-2.5 1.01-2.5 2.25a.75.75 0 0 1-1.5 0Zm9.5 0c0-.89-.33-1.7-.88-2.33.37-.14.77-.22 1.18-.22 1.93 0 3.5 1.4 3.5 3.12a.75.75 0 0 1-1.5 0c0-.9-.78-1.62-1.75-1.62-.2 0-.39.03-.57.09a3.77 3.77 0 0 0 .02.96Z"></path>
+      </svg>
+      <span>${count} ${noun} tried this</span>
+    </span>`;
+};
+
+const currentUserOwnsQuiz = (quiz) => {
+  if (!state.authenticated || !state.user) return false;
+
+  const owner = quiz.owner;
+  if (!owner) return false;
+
+  if (state.user.id && owner.id) {
+    return String(state.user.id) === String(owner.id);
+  }
+
+  return Boolean(
+    state.user.username &&
+      owner.username &&
+      state.user.username === owner.username,
+  );
+};
+
+const renderLikeButton = (quiz, { canViewLikers = false } = {}) => {
   if (!state.authenticated) return "";
 
   const liked = Boolean(quiz.likedByMe);
-  if (quiz.status === "draft" && !liked) return "";
+  const showLikeButton = quiz.status !== "draft" || liked;
+  if (!showLikeButton && !canViewLikers) return "";
 
   const quizId = getQuizId(quiz);
   const likeCount = Number(quiz.likeCount) || 0;
@@ -327,24 +375,45 @@ const renderLikeButton = (quiz) => {
   const label = liked
     ? `Unlike ${title} (${likeCount} likes)`
     : `Like ${title} (${likeCount} likes)`;
+  const countLabel =
+    likeCount === 1 ? "View 1 person who liked" : `View ${likeCount} people who liked`;
+  const countHtml = canViewLikers
+    ? `<button
+        class="like-count like-count-button"
+        type="button"
+        data-action="likes"
+        data-quiz-id="${escapeHtml(quizId)}"
+        data-quiz-title="${title}"
+        data-like-count-for="${escapeHtml(quizId)}"
+        aria-label="${countLabel} ${title}"
+        aria-haspopup="dialog"
+        title="View who liked this quiz"
+      >${likeCount}</button>`
+    : `<span class="like-count" data-like-count-for="${escapeHtml(quizId)}">${likeCount}</span>`;
+
+  const likeButtonHtml = showLikeButton
+    ? `<button
+        class="like-button like-button--card${liked ? " is-liked" : ""}"
+        type="button"
+        data-action="like"
+        data-quiz-id="${escapeHtml(quizId)}"
+        data-quiz-title="${title}"
+        aria-pressed="${liked}"
+        aria-label="${label}"
+        title="${liked ? "Remove your like" : "Like this quiz"}"
+        ${pendingLikes.has(quizId) ? "disabled" : ""}
+      >
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true">
+          <path d="${liked ? HEART_FILLED_PATH : HEART_OUTLINE_PATH}"></path>
+        </svg>
+      </button>`
+    : "";
 
   return `
-    <button
-      class="like-button like-button--card${liked ? " is-liked" : ""}"
-      type="button"
-      data-action="like"
-      data-quiz-id="${escapeHtml(quizId)}"
-      data-quiz-title="${title}"
-      aria-pressed="${liked}"
-      aria-label="${label}"
-      title="${liked ? "Remove your like" : "Like this quiz"}"
-      ${pendingLikes.has(quizId) ? "disabled" : ""}
-    >
-      <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true">
-        <path d="${liked ? HEART_FILLED_PATH : HEART_OUTLINE_PATH}"></path>
-      </svg>
-      <span class="like-button__count">${likeCount}</span>
-    </button>`;
+    <span class="quiz-meta-item quiz-meta-item--likes">
+      ${likeButtonHtml}
+      ${countHtml}
+    </span>`;
 };
 
 const renderOwnedQuiz = (quiz) => {
@@ -396,7 +465,8 @@ const renderOwnedQuiz = (quiz) => {
           <span class="meta-dot" aria-hidden="true"></span>
           <span>${questionCount} ${questionLabel}</span>
         </span>
-        ${renderLikeButton(quiz)}
+        ${renderParticipantStat(quiz)}
+        ${renderLikeButton(quiz, { canViewLikers: true })}
         ${updatedText ? `<span class="quiz-meta-item">${escapeHtml(updatedText)}</span>` : ""}
       </div>
     </article>`;
@@ -437,7 +507,9 @@ const renderTakenQuiz = (quiz) => {
         </span>
         <span class="quiz-meta-item">${quiz.attempts} ${attemptsLabel}</span>
         ${scoreText}
-        ${renderLikeButton(quiz)}
+        ${renderLikeButton(quiz, {
+          canViewLikers: currentUserOwnsQuiz(quiz),
+        })}
         ${completedText ? `<span class="quiz-meta-item">${escapeHtml(completedText)}</span>` : ""}
       </div>
     </article>`;
@@ -476,7 +548,9 @@ const renderLikedQuiz = (quiz) => {
           <span>${questionCount} ${questionLabel}</span>
         </span>
         ${ownerName}
-        ${renderLikeButton(quiz)}
+        ${renderLikeButton(quiz, {
+          canViewLikers: currentUserOwnsQuiz(quiz),
+        })}
         ${updatedText ? `<span class="quiz-meta-item">${escapeHtml(updatedText)}</span>` : ""}
       </div>
     </article>`;
@@ -858,9 +932,6 @@ const syncLikeButtons = (quizId, liked, likeCount) => {
     button.setAttribute("aria-pressed", String(liked));
     button.disabled = pendingLikes.has(String(quizId));
 
-    const countEl = button.querySelector(".like-button__count");
-    if (countEl) countEl.textContent = String(likeCount);
-
     const path = button.querySelector("path");
     if (path) {
       path.setAttribute(
@@ -875,6 +946,21 @@ const syncLikeButtons = (quizId, liked, likeCount) => {
       `${liked ? "Unlike" : "Like"} ${title} (${likeCount} likes)`,
     );
     button.title = liked ? "Remove your like" : "Like this quiz";
+  });
+
+  document.querySelectorAll("[data-like-count-for]").forEach((countEl) => {
+    if (countEl.dataset.likeCountFor !== String(quizId)) return;
+    countEl.textContent = String(likeCount);
+
+    if (countEl.matches("button[data-action='likes']")) {
+      const title =
+        countEl.dataset.quizTitle || findQuiz(quizId)?.title || "this quiz";
+      const noun = likeCount === 1 ? "person" : "people";
+      countEl.setAttribute(
+        "aria-label",
+        `View ${likeCount} ${noun} who liked ${title}`,
+      );
+    }
   });
 };
 
@@ -1058,6 +1144,7 @@ const setDeleteBusy = (busy) => {
 const openDeleteModal = (quizId, quizTitle, trigger) => {
   if (isDeleting) return;
 
+  closeLikesModal();
   deleteTarget = { quizId, quizTitle };
   deleteTrigger = trigger;
   deleteModalTitle.textContent = quizTitle;
@@ -1171,6 +1258,11 @@ deleteModal.addEventListener("keydown", (event) => {
   }
 });
 
+const closeLikesModal = () => likesModalController?.close();
+
+const openLikesModal = (quizId, quizTitle, trigger) =>
+  likesModalController?.open({ quizId, quizTitle, trigger });
+
 const buildShareUrl = (quiz) => {
   const relativeUrl = quiz.shareUrl || `/quiz/${getQuizId(quiz)}`;
 
@@ -1254,6 +1346,7 @@ const openShareModal = (quizId, trigger) => {
 
   closeDeleteModal();
   closeJoinModal();
+  closeLikesModal();
 
   const shareCode = String(quiz.shareCode || "");
   activeShare = {
@@ -1392,6 +1485,7 @@ const openJoinModal = (trigger) => {
 
   closeDeleteModal();
   closeShareModal();
+  closeLikesModal();
 
   joinTrigger = trigger;
   joinCodeInput.value = "";
@@ -1544,7 +1638,18 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
-  // 5. Share an owned quiz
+  // 5. View who liked an owned quiz
+  const likesButton = event.target.closest("[data-action='likes']");
+  if (likesButton) {
+    openLikesModal(
+      likesButton.dataset.quizId,
+      likesButton.dataset.quizTitle || "this quiz",
+      likesButton,
+    );
+    return;
+  }
+
+  // 6. Share an owned quiz
   const shareButton = event.target.closest("[data-action='share']");
   if (shareButton) {
     openShareModal(shareButton.dataset.quizId, shareButton);
@@ -1653,6 +1758,10 @@ document.addEventListener("click", async (event) => {
 
     if (action === "profile") {
       window.location.href = "/profile";
+    } else if (action === "public-profile") {
+      window.location.href = `/users/${encodeURIComponent(
+        state.user?.username || "",
+      )}`;
     } else if (action === "logout") {
       try {
         await fetch("/api/auth/logout");

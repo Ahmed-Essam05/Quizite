@@ -7,6 +7,7 @@ import {
   deleteQuiz,
   getQuiz,
   getQuizByShareCode,
+  getQuizLikers,
   likeQuiz,
   submitQuiz,
   unlikeQuiz,
@@ -45,10 +46,11 @@ const handleIconUpload = (req, res, next) => {
 router.post("/", protect, createQuiz);
 router.post("/icon", protect, handleIconUpload, uploadQuizIcon);
 router.get("/code/:code", optionalAuth, getQuizByShareCode);
-router.get("/:id", optionalAuth, getQuiz);
+router.get("/:id/likes", protect, getQuizLikers);
+router.get("/:id", protect, getQuiz);
 router.patch("/:id", protect, updateQuiz);
 router.delete("/:id", protect, deleteQuiz);
-router.post("/:id/submit", optionalAuth, submitQuiz);
+router.post("/:id/submit", protect, submitQuiz);
 router.post("/:id/like", protect, likeQuiz);
 router.delete("/:id/like", protect, unlikeQuiz);
 

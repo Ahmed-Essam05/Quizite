@@ -461,11 +461,41 @@
   padding-top: 12px;
 }
 
-/* Like button */
+/* Like control */
+.quiz-like-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .like-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.like-count {
+  padding: 0 4px;
+  color: var(--ink-secondary);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.like-count-button {
+  padding: 4px 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.like-count-button:hover {
+  color: #cf222e;
+  background-color: rgba(207, 34, 46, 0.08);
 }
 
 .like-button__icon {

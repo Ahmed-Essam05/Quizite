@@ -18,10 +18,7 @@ import app from "../app.js";
 import Quiz from "../model/quizModel.js";
 import QuizAttempt from "../model/quizAttemptModel.js";
 import User from "../model/userModel.js";
-import {
-  MAX_QUIZ_ICON_BYTES,
-  QUIZ_ICONS_DIR,
-} from "../utils/quizIcon.js";
+import { MAX_QUIZ_ICON_BYTES, QUIZ_ICONS_DIR } from "../utils/quizIcon.js";
 import { clearTestDB, connectTestDB, disconnectTestDB } from "./helpers/db.js";
 import {
   buildMcqQuestion,
@@ -258,7 +255,10 @@ describe("Quiz API", () => {
       const response = await alice.post("/api/quizzes").send({
         title: "Quiz",
         questions: [
-          buildMcqQuestion({ correctChoiceIndex: undefined, correctChoiceId: undefined }),
+          buildMcqQuestion({
+            correctChoiceIndex: undefined,
+            correctChoiceId: undefined,
+          }),
         ],
       });
 
@@ -316,12 +316,12 @@ describe("Quiz API", () => {
   });
 
   describe("draft privacy and answer-key protection", () => {
-    it("hides drafts from anonymous and other users", async () => {
+    it("requires auth and hides drafts from other users", async () => {
       const created = await createQuizViaApi(alice, { status: "draft" });
       const quizId = created.body.data.quiz.id;
 
       const anonymous = await request(server).get(`/api/quizzes/${quizId}`);
-      expect(anonymous.status).toBe(403);
+      expect(anonymous.status).toBe(401);
 
       const other = await bob.get(`/api/quizzes/${quizId}`);
       expect(other.status).toBe(403);
@@ -338,14 +338,11 @@ describe("Quiz API", () => {
 
     it("never exposes answer keys to takers", async () => {
       const created = await createQuizViaApi(alice, {
-        questions: [
-          buildMcqQuestion(),
-          buildWrittenQuestion(),
-        ],
+        questions: [buildMcqQuestion(), buildWrittenQuestion()],
       });
       const quizId = created.body.data.quiz.id;
 
-      const response = await request(server).get(`/api/quizzes/${quizId}`);
+      const response = await bob.get(`/api/quizzes/${quizId}`);
       const serialized = JSON.stringify(response.body);
 
       expect(response.status).toBe(200);
@@ -396,9 +393,12 @@ describe("Quiz API", () => {
       expect(card.shareCode).toBe(shareCode);
       expect(card.shareUrl).toBe(`/quiz/${quizId}`);
 
-      const publicQuiz = await request(server).get(`/api/quizzes/${quizId}`);
+      const publicQuiz = await bob.get(`/api/quizzes/${quizId}`);
       expect(publicQuiz.status).toBe(200);
       expect(publicQuiz.body.data.quiz.shareCode).toBeUndefined();
+
+      const anonymous = await request(server).get(`/api/quizzes/${quizId}`);
+      expect(anonymous.status).toBe(401);
     });
 
     it("finds a published quiz by code without creating an attempt", async () => {
@@ -421,7 +421,10 @@ describe("Quiz API", () => {
       const storedUser = await User.findOne({ username: "bob" });
       expect(storedUser.completedQuizzes).toHaveLength(0);
 
-      const direct = await request(server).get(`/api/quizzes/${quizId}`);
+      const anonymous = await request(server).get(`/api/quizzes/${quizId}`);
+      expect(anonymous.status).toBe(401);
+
+      const direct = await bob.get(`/api/quizzes/${quizId}`);
       expect(direct.status).toBe(200);
       expect(direct.body.data.quiz.id).toBe(quizId);
     });
@@ -482,9 +485,7 @@ describe("Quiz API", () => {
       );
       expect(invalidCharacters.status).toBe(400);
 
-      const unknown = await request(server).get(
-        "/api/quizzes/code/ZZZZ9999",
-      );
+      const unknown = await request(server).get("/api/quizzes/code/ZZZZ9999");
       expect(unknown.status).toBe(404);
       expect(unknown.body.message).toBe("No quiz found with that code.");
 
@@ -629,7 +630,9 @@ describe("Quiz API", () => {
       const created = await createQuizViaApi(alice);
       const quizId = created.body.data.quiz.id;
 
-      await alice.post(`/api/quizzes/${quizId}/submit`).send(buildAnswers(await fetchQuiz(alice, quizId)));
+      await alice
+        .post(`/api/quizzes/${quizId}/submit`)
+        .send(buildAnswers(await fetchQuiz(alice, quizId)));
 
       const other = await bob.delete(`/api/quizzes/${quizId}`);
       expect(other.status).toBe(403);
@@ -644,7 +647,9 @@ describe("Quiz API", () => {
       const completed = await alice.get("/api/users/me/completed");
       expect(completed.body.data.quizzes).toHaveLength(0);
 
-      const user = await User.findById((await User.findOne({ username: "alice" }))._id);
+      const user = await User.findById(
+        (await User.findOne({ username: "alice" }))._id,
+      );
       expect(user.completedQuizzes).toHaveLength(0);
     });
   });
@@ -670,7 +675,7 @@ describe("Quiz API", () => {
       const answers = buildAnswers(quiz);
       answers.answers[2].writtenText = "  javascript  ";
 
-      const response = await request(server)
+      const response = await bob
         .post(`/api/quizzes/${quizId}/submit`)
         .send(answers);
 
@@ -685,16 +690,14 @@ describe("Quiz API", () => {
       const quiz = await fetchQuiz(alice, quizId);
       const firstQuestion = quiz.pages[0].questions[0];
 
-      const response = await request(server)
-        .post(`/api/quizzes/${quizId}/submit`)
-        .send({
-          answers: [
-            {
-              questionId: firstQuestion.id,
-              choiceId: firstQuestion.correctChoiceId,
-            },
-          ],
-        });
+      const response = await bob.post(`/api/quizzes/${quizId}/submit`).send({
+        answers: [
+          {
+            questionId: firstQuestion.id,
+            choiceId: firstQuestion.correctChoiceId,
+          },
+        ],
+      });
 
       expect(response.status).toBe(200);
       expect(response.body.data.totalQuestions).toBe(3);
@@ -717,7 +720,7 @@ describe("Quiz API", () => {
       answers.answers[0].isCorrect = true;
       answers.score = 999;
 
-      const response = await request(server)
+      const response = await bob
         .post(`/api/quizzes/${quizId}/submit`)
         .send(answers);
 
@@ -727,18 +730,21 @@ describe("Quiz API", () => {
 
     it("matches written answers case-insensitively after trimming", async () => {
       const created = await createQuizViaApi(alice, {
-        questions: [buildWrittenQuestion({ acceptedAnswers: ["JavaScript", "JS"] })],
+        questions: [
+          buildWrittenQuestion({ acceptedAnswers: ["JavaScript", "JS"] }),
+        ],
       });
       const quizId = created.body.data.quiz.id;
       const quiz = await fetchQuiz(alice, quizId);
 
-      const response = await request(server)
-        .post(`/api/quizzes/${quizId}/submit`)
-        .send({
-          answers: [
-            { questionId: quiz.pages[0].questions[0].id, writtenText: " JAVASCRIPT " },
-          ],
-        });
+      const response = await bob.post(`/api/quizzes/${quizId}/submit`).send({
+        answers: [
+          {
+            questionId: quiz.pages[0].questions[0].id,
+            writtenText: " JAVASCRIPT ",
+          },
+        ],
+      });
 
       expect(response.body.data.score).toBe(1);
     });
@@ -757,7 +763,7 @@ describe("Quiz API", () => {
       const answers = buildAnswers(quiz);
       answers.answers[0].writtenText = "Anything at all";
 
-      const response = await request(server)
+      const response = await bob
         .post(`/api/quizzes/${quizId}/submit`)
         .send(answers);
 
@@ -775,7 +781,7 @@ describe("Quiz API", () => {
       const quizId = created.body.data.quiz.id;
       const quiz = await fetchQuiz(alice, quizId);
 
-      const hidden = await request(server)
+      const hidden = await bob
         .post(`/api/quizzes/${quizId}/submit`)
         .send(buildAnswers(quiz));
 
@@ -786,7 +792,7 @@ describe("Quiz API", () => {
         .patch(`/api/quizzes/${quizId}`)
         .send({ showCorrectAnswers: true });
 
-      const shown = await request(server)
+      const shown = await alice
         .post(`/api/quizzes/${quizId}/submit`)
         .send(buildAnswers(quiz));
 
@@ -805,7 +811,7 @@ describe("Quiz API", () => {
       const answers = buildAnswers(quiz);
       answers.answers[2].writtenText = "Python";
 
-      const response = await request(server)
+      const response = await bob
         .post(`/api/quizzes/${quizId}/submit`)
         .send(answers);
 
@@ -840,7 +846,7 @@ describe("Quiz API", () => {
       const answers = buildAnswers(quiz);
       answers.answers[2].writtenText = "javascript";
 
-      const response = await request(server)
+      const response = await bob
         .post(`/api/quizzes/${quizId}/submit`)
         .send(answers);
 
@@ -853,26 +859,30 @@ describe("Quiz API", () => {
       const created = await createGradingQuiz(alice);
       const quizId = created.body.data.quiz.id;
 
-      const notArray = await request(server)
+      const notArray = await bob
         .post(`/api/quizzes/${quizId}/submit`)
         .send({ answers: "nope" });
       expect(notArray.status).toBe(400);
 
-      const badEntry = await request(server)
+      const badEntry = await bob
         .post(`/api/quizzes/${quizId}/submit`)
         .send({ answers: [{ nope: true }] });
       expect(badEntry.status).toBe(400);
     });
 
-    it("blocks draft submissions from anonymous takers", async () => {
+    it("rejects unauthenticated submissions before draft checks", async () => {
       const created = await createQuizViaApi(alice, { status: "draft" });
       const quizId = created.body.data.quiz.id;
 
-      const response = await request(server)
+      const anonymous = await request(server)
         .post(`/api/quizzes/${quizId}/submit`)
         .send({ answers: [] });
+      expect(anonymous.status).toBe(401);
 
-      expect(response.status).toBe(403);
+      const other = await bob
+        .post(`/api/quizzes/${quizId}/submit`)
+        .send({ answers: [] });
+      expect(other.status).toBe(403);
     });
   });
 
@@ -900,9 +910,11 @@ describe("Quiz API", () => {
 
     afterEach(async () => {
       await Promise.all(
-        createdIconFiles.splice(0).map((filename) =>
-          fs.unlink(path.join(QUIZ_ICONS_DIR, filename)).catch(() => {}),
-        ),
+        createdIconFiles
+          .splice(0)
+          .map((filename) =>
+            fs.unlink(path.join(QUIZ_ICONS_DIR, filename)).catch(() => {}),
+          ),
       );
     });
 
@@ -1000,17 +1012,13 @@ describe("Quiz API", () => {
 
       expect(uploaded.status).toBe(201);
       const reference = trackIcon(uploaded.body.data.reference);
-      expect(reference).toMatch(
-        /^upload:[a-f0-9]{24}-[a-f0-9]{32}\.webp$/,
-      );
+      expect(reference).toMatch(/^upload:[a-f0-9]{24}-[a-f0-9]{32}\.webp$/);
       expect(uploaded.body.data.icon.type).toBe("upload");
       expect(uploaded.body.data.icon.value).toMatch(
         /^\/uploads\/quiz-icons\/[a-f0-9]{24}-[a-f0-9]{32}\.webp$/,
       );
 
-      const served = await request(server).get(
-        uploaded.body.data.icon.value,
-      );
+      const served = await request(server).get(uploaded.body.data.icon.value);
       expect(served.status).toBe(200);
       expect(served.headers["content-type"]).toContain("image/webp");
 
@@ -1165,7 +1173,7 @@ describe("Quiz API", () => {
       expect(quiz.peopleTookCount).toBe(2);
     });
 
-    it("does not count anonymous submissions", async () => {
+    it("rejects anonymous submissions without recording attempts", async () => {
       const created = await createQuizViaApi(alice);
       const quizId = created.body.data.quiz.id;
       const quiz = await fetchQuiz(alice, quizId);
@@ -1174,8 +1182,10 @@ describe("Quiz API", () => {
         .post(`/api/quizzes/${quizId}/submit`)
         .send(buildAnswers(quiz));
 
-      expect(response.body.data.countedForParticipants).toBe(false);
-      expect(response.body.data.peopleTookCount).toBe(0);
+      expect(response.status).toBe(401);
+      expect(await QuizAttempt.countDocuments({ quiz: quizId })).toBe(0);
+      const refreshed = await fetchQuiz(alice, quizId);
+      expect(refreshed.peopleTookCount).toBe(0);
     });
 
     it("records completed quiz history without duplicates", async () => {
@@ -1275,7 +1285,9 @@ describe("Quiz API", () => {
       const created = await createQuizViaApi(alice);
       const quizId = created.body.data.quiz.id;
 
-      const response = await request(server).post(`/api/quizzes/${quizId}/like`);
+      const response = await request(server).post(
+        `/api/quizzes/${quizId}/like`,
+      );
       expect(response.status).toBe(401);
     });
 
@@ -1341,7 +1353,11 @@ describe("Quiz API", () => {
       );
       expect(
         liked.body.data.quizzes.every(
-          (quiz) => quiz.likedByMe && quiz.likeCount >= 1,
+          (quiz) =>
+            quiz.likedByMe &&
+            quiz.likeCount >= 1 &&
+            quiz.owner.id &&
+            quiz.owner.username === "alice",
         ),
       ).toBe(true);
     });
@@ -1384,6 +1400,10 @@ describe("Quiz API", () => {
       const completed = await bob.get("/api/users/me/completed");
       expect(completed.body.data.quizzes[0].likeCount).toBe(1);
       expect(completed.body.data.quizzes[0].likedByMe).toBe(true);
+      expect(completed.body.data.quizzes[0].owner).toMatchObject({
+        username: "alice",
+      });
+      expect(completed.body.data.quizzes[0].owner.id).toBeTruthy();
 
       await bob.delete(`/api/quizzes/${quizId}/like`);
       const afterUnlike = await bob.get("/api/users/me/completed");
@@ -1475,6 +1495,7 @@ describe("Quiz API", () => {
       );
       expect(firstCard.likeCount).toBe(1);
       expect(firstCard.likedByMe).toBe(true);
+      expect(firstCard.owner.id).toBe(overview.body.data.user.id);
       expect(secondCard.likeCount).toBe(0);
       expect(secondCard.likedByMe).toBe(false);
     });

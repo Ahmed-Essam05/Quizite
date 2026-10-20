@@ -33,11 +33,12 @@ A full-stack quiz creation and taking platform built with **Node.js**, **Express
 - 🗑 **Quiz Deletion** — Owners can delete quizzes from the dashboard with a confirmation step
 - 📄 **Multi-page Quizzes** — The builder keeps every question on one continuous page and groups them into pages of 10; takers move between pages with Previous / Next (max 8 pages / 80 questions)
 - 🌐 **Quiz Sharing** — Every quiz gets a unique shareable URL and an 8-character code (e.g. `A7K9P2XZ`) with a share dialog that copies either one
-- 🔎 **Join by Code** — "Enter Quiz Code" on the dashboard looks up a published quiz by its code and opens the existing taking page; draft codes resolve only for their owner
+- 🔎 **Join by Code** — "Enter Quiz Code" on the dashboard looks up a published quiz by its code and opens the existing taking page; guests are sent to login first and returned to the quiz afterward. Draft codes resolve only for their owner
 - ✅ **Instant Grading** — Submit answers and land on a dedicated, refresh-safe results page with percentage score and per-question breakdown
 - 🛡 **Retake Control** — Per-quiz `allowRetakes` setting enforces a single submission when disabled
 - 👁 **Answer Reveal Control** — Per-quiz `showCorrectAnswers` setting decides whether takers see the answer key
-- ❤️ **Likes** — Logged-in users can like / unlike quizzes (idempotent, atomic) from the quiz page and dashboard cards; counts stay in sync and rapid clicks are guarded
+- ❤️ **Likes** — Logged-in users can like / unlike quizzes (idempotent, atomic) from the quiz page and dashboard cards; counts stay in sync and rapid clicks are guarded. Quiz creators can click their quizzes' like counts wherever those quizzes appear — dashboard owned, liked, and taken lists, the quiz page, and public profiles — to see who liked them
+- 🌐 **Public Creator Profiles** — `/users/:username` shows public stats and the creator's top three published quizzes, ranked by likes, unique participants, and title; draft details never leak
 - 👤 **Owner Dashboard** — Paginated overview of owned quizzes plus "Liked quizzes" and "Quizzes you have taken" sections
 - 📚 **Taken History** — Track completed quizzes with attempt counts and last score
 - ❤️ **Liked Quizzes** — Dedicated, paginated sidebar view of every quiz the current user has liked, with an empty state and count badge
@@ -83,7 +84,8 @@ A full-stack quiz creation and taking platform built with **Node.js**, **Express
 │                                                     │
 │  Static Files (/frontend)                           │
 │  Page Routes  /, /login, /signup, /create,          │
-│               /profile, /quiz/:id, /quiz/:id/edit   │
+│               /profile, /users/:username, /quiz/:id,│
+│               /quiz/:id/edit                        │
 │                                                     │
 │  API Routes:                                        │
 │  /api/auth      → authRoute.js                      │
@@ -147,26 +149,32 @@ quizite/
 │   ├── catchAsync.js          # Async error wrapper for controllers
 │   ├── quizValidation.js      # Strict parsing/validation of quiz payloads
 │   ├── quizCode.js            # Secure 8-char share-code generation, validation, retry save, backfill helper
+│   ├── participantStats.js    # Unique quiz participant aggregation helpers
 │   └── email.js               # Nodemailer SMTP helper
 │
 ├── tests/
 │   ├── setup.js               # Vitest env setup (in-memory MongoDB)
 │   ├── helpers/               # db bootstrap, factories, agent helpers
-│   ├── auth.test.js           # Auth endpoint tests
+│   ├── auth.test.js           # Auth endpoint and protected-page redirect tests
+│   ├── authUi.test.js         # Login `next` redirect handling tests
 │   ├── quizApi.test.js        # Quiz CRUD/submit/like/users API tests, including share-code lookup and access rules
 │   ├── quizCode.test.js       # Share-code generation, uniqueness, collision retry, and backfill tests
 │   ├── quizModel.test.js      # Schema validation tests
-│   ├── quizUi.test.js         # Quiz loading, unanswered warnings, submission, results tests
+│   ├── quizUi.test.js         # Quiz loading, likes visibility, unanswered warnings, submission, results tests
 │   ├── createUi.test.js       # Quiz-builder validation and alert tests
-│   └── overviewUi.test.js     # Dashboard actions and delete-modal tests
+│   ├── overviewUi.test.js     # Dashboard actions, likes visibility, participant stats, and modal tests
+│   ├── socialApi.test.js      # Owner-only liker lists, profile ranking/filtering, and unique participant tests
+│   └── publicProfileUi.test.js # Public profile top-three rendering, creator modal, and error-state tests
 │
 └── frontend/
     ├── overview.html / .js / .css   # Dashboard: owned + liked + taken quizzes, pagination, likes, share dialog, join-by-code, edit/delete
     ├── login.html / auth.js / auth.css # Login form
     ├── signup.html                  # Signup form (shares auth.js / auth.css)
     ├── profile.html / .js / .css    # Profile info + password change
+    ├── public-profile.html / .js / .css # Public creator profile: likes received + top three published quizzes
     ├── create.html / .js / .css     # Quiz builder UI (create + edit mode)
     ├── quiz.html / .js / .css       # Quiz taking UI
+    ├── likesModal.js / likes.css    # Shared creator-only likers modal controller and styles
     ├── results.html / .js / .css    # Dedicated quiz results page
     └── quizResultStore.js           # Per-tab short-lived results handoff
 ```
@@ -201,7 +209,7 @@ quizite/
 | `pages`          | Page[]     | Nested array (max 8 pages / 80 questions total) |
 | `likes`          | ObjectId[] | Users who liked the quiz (unique refs)          |
 | `likeCount`      | Number     | Denormalized like count                         |
-| `peopleTookCount`| Number     | Counts unique logged-in takers                  |
+| `peopleTookCount`| Number     | Cached counter for unique logged-in takers; displayed counts are derived from completed `QuizAttempt`s |
 | `allowRetakes`   | Boolean    | When `false`, each user may submit once         |
 | `showCorrectAnswers` | Boolean | When `true`, takers see the answer key after submitting |
 | `publishedAt`    | Date       | Set when status first changes to `"published"`  |
@@ -231,8 +239,8 @@ validated when a quiz is created or updated.
 
 ### QuizAttempt
 
-An immutable record created for every logged-in submission (retakes create
-additional attempts). Guests can submit quizzes but no attempt record is stored.
+An immutable record created for every authenticated submission (retakes create
+additional attempts). Quiz loading and submission both require login.
 
 | Field             | Type       | Notes                                        |
 |-------------------|------------|----------------------------------------------|
@@ -310,6 +318,7 @@ All API endpoints are prefixed with `/api`.
         "likedByMe": true,
         "allowRetakes": false,
         "completedByMe": true,
+        "peopleTookCount": 4,
         "updatedAt": "...",
         "shareUrl": "/quiz/...",
         "shareCode": "A7K9P2XZ"
@@ -338,6 +347,7 @@ All API endpoints are prefixed with `/api`.
 | GET    | `/me/completed` | Required | Quizzes the user has taken, with attempt stats |
 | GET    | `/me/liked`  | Required | Paginated quizzes liked by the current user |
 | PATCH  | `/me/password`  | Required | Change password (verifies current, re-issues session) |
+| GET    | `/:username/profile` | Public | Public creator profile with total likes received and top three published quizzes |
 
 **Change password body:**
 ```json
@@ -390,7 +400,7 @@ disappear automatically because likes are stored on the quiz document.
         "likedByMe": true,
         "allowRetakes": false,
         "completedByMe": true,
-        "owner": { "username": "alice" },
+        "owner": { "id": "...", "username": "alice" },
         "updatedAt": "...",
         "shareUrl": "/quiz/..."
       }
@@ -409,22 +419,73 @@ disappear automatically because likes are stored on the quiz document.
 
 ---
 
+### Public profiles — `/api/users/:username/profile`
+
+Returns only public data. Usernames must be 3–30 letters, numbers, or
+underscores; invalid or unknown usernames return `404`.
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "user": {
+      "id": "...",
+      "username": "alice",
+      "memberSince": "2025-01-15T12:00:00.000Z"
+    },
+    "stats": { "totalLikesReceived": 13 },
+    "topLikedQuizzes": [
+      {
+        "id": "...",
+        "title": "My best quiz",
+        "icon": { "type": "emoji", "value": "🚀", "reference": "emoji:🚀" },
+        "likeCount": 7,
+        "peopleTookCount": 12,
+        "shareUrl": "/quiz/...",
+        "owner": { "id": "...", "username": "alice" }
+      }
+    ]
+  }
+}
+```
+
+- `totalLikesReceived` is the unique like total across all quizzes owned by the
+  creator, including drafts. Likes are deduplicated per user.
+- `topLikedQuizzes` contains at most **three published** quizzes owned by the
+  creator. Quizzes are ordered by like count descending, then unique
+  participants descending, then title using a case-insensitive comparison
+  (with quiz ID as a final stable tie-break). Published quizzes with zero likes
+  are still eligible; drafts are excluded entirely, so their titles and stats
+  never leak.
+- Email addresses, password hashes, reset tokens, roles, and activity flags are
+  never returned. Quiz owner objects expose only `id` and `username`.
+
+---
+
 ### Quizzes — `/api/quizzes`
 
 | Method | Path              | Auth      | Description                                       |
 |--------|-------------------|-----------|---------------------------------------------------|
 | POST   | `/`               | Required  | Create a new quiz                                 |
 | GET    | `/code/:code`     | Optional  | Look up a quiz by its 8-character share code      |
-| GET    | `/:id`            | Optional  | Get a quiz (draft only accessible to owner/admin) |
+| GET    | `/:id`            | Required  | Get a quiz (draft only accessible to owner/admin) |
 | PATCH  | `/:id`            | Required  | Update quiz title, description, pages, settings, or status (owner only) |
 | DELETE | `/:id`            | Required  | Delete a quiz (owner only)                        |
-| POST   | `/:id/submit`     | Optional  | Submit answers and receive graded results         |
+| POST   | `/:id/submit`     | Required  | Submit answers and receive graded results         |
 | POST   | `/:id/like`       | Required  | Like a quiz (idempotent)                          |
 | DELETE | `/:id/like`       | Required  | Unlike a quiz (idempotent)                        |
+| GET    | `/:id/likes`      | Required  | Owner-only list of users who liked the quiz        |
 
-`GET /:id` additionally returns `isOwner`, `likedByMe`, and `canRetake` so the
-client can render the correct state. Owners receive the answer key
-(`correctChoiceId` / `acceptedAnswers`) when loading their own quiz for editing.
+`GET /:id` and `POST /:id/submit` require authentication; anonymous requests
+receive `401`. `GET /:id` additionally returns `isOwner`, `likedByMe`, and
+`canRetake` so the client can render the correct state. Owners receive the
+answer key (`correctChoiceId` / `acceptedAnswers`) when loading their own quiz
+for editing. Quiz pages are protected too: anonymous visitors are redirected to
+`/login?next=<destination>`, and the login form returns them to that destination
+after a successful sign-in. The share-code lookup endpoint remains public and
+returns only `{ id, shareUrl }`, so entering a code as a guest resolves the quiz
+and then hands off to the login flow.
 
 **Share codes.** Every quiz is assigned a cryptographically random, unique
 8-character code (`A–Z`, `0–9`) on creation; it is never derived from the
@@ -443,6 +504,26 @@ attempt or changes completion state.
 `{ likeCount, liked }`. Only published quizzes can be liked. The `likes` array
 stores unique user references and is the source of truth; `likeCount` is
 denormalized and repaired if a legacy document has drifted.
+
+`GET /:id/likes` is **owner-only** and returns public liker identities in a
+stable, case-insensitive username order:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "quiz": { "id": "...", "title": "My Quiz" },
+    "likeCount": 2,
+    "likers": [
+      { "id": "...", "username": "alice", "profileUrl": "/users/alice" },
+      { "id": "...", "username": "bob", "profileUrl": "/users/bob" }
+    ]
+  }
+}
+```
+
+Non-owners receive `403`; anonymous requests receive `401`. The response never
+includes liker emails, password data, tokens, or private account flags.
 
 #### Create / Update Quiz Body
 
@@ -545,9 +626,8 @@ denormalized and repaired if a legacy document has drifted.
 > - `correctAnswer` and `acceptedAnswers` are only included when the quiz has
 >   `showCorrectAnswers: true`.
 > - When retakes are disabled and the user already submitted, the endpoint
->   responds `400`. Guests can submit but do not increment
->   `peopleTookCount` (`countedForParticipants: false`) and cannot be
->   rate-limited to a single attempt.
+>   responds `400`. Anonymous submissions are rejected with `401` before any
+>   attempt is recorded or `peopleTookCount` changes.
 
 ---
 
@@ -558,22 +638,26 @@ denormalized and repaired if a legacy document has drifted.
 | `/`              | `overview.html`   | Dashboard — owned, liked, and taken quizzes (paginated)  | No (guest view)|
 | `/login`         | `login.html`      | Login form                                               | No            |
 | `/signup`        | `signup.html`     | Signup form                                              | No            |
-| `/profile`       | `profile.html`    | Profile info + stats and password change form            | Yes (redirects to `/login`) |
+| `/profile`       | `profile.html`    | Private profile info + stats and password change form     | Yes (redirects to `/login`) |
+| `/users/:username` | `public-profile.html` | Public creator profile: likes received and top three published quizzes | No (public) |
 | `/create`        | `create.html`     | Quiz builder with question type tabs and live preview    | Yes (redirects to `/login`) |
-| `/quiz/:id`      | `quiz.html`       | Take a quiz; successful submissions navigate to results  | No (public)   |
+| `/quiz/:id`      | `quiz.html`       | Take a quiz; successful submissions navigate to results  | Yes (redirects to `/login?next=...`) |
 | `/quiz/:id/results` | `results.html` | Dedicated scored results and per-question review        | No (public; per-tab result data) |
 | `/quiz/:id/edit` | `create.html`     | Same builder in edit mode, pre-loaded with the quiz      | Yes (redirects to `/login`) |
 
 ### Notable Frontend Behaviours
 
-- **Route Protection & Gating** — Protected pages (`/create`, `/profile`, `/quiz/:id/edit`) are guarded on the server via `protectPage` middleware (redirecting unauthenticated requests to `/login`) and validated by client-side initialization guards. On the dashboard, attempting to create a quiz as a guest routes directly to `/login`.
+- **Route Protection & Gating** — Protected pages (`/create`, `/profile`, `/quiz/:id`, `/quiz/:id/edit`) are guarded on the server via `protectPage` middleware. Unauthenticated visits redirect to `/login?next=<destination>`, and a successful login returns the user to that destination (unsafe or looping `next` values fall back to `/`). The dashboard still shows a guest view, but starting, taking, or creating a quiz requires login.
 - **Session Cookie Architecture** — Authentication tokens are preserved via cookie (`jwt` with `Path=/`, 30-day lifetime) and mirrored in client storage. The overview page synchronously reads session state on startup and immediately transitions to authenticated mode upon login without desynchronization.
-- **Dashboard likes** — Published quiz cards show a heart button with the current count: filled when liked, outlined otherwise. Likes update optimistically, guard against rapid repeat clicks, and roll back with an error toast if the request fails. Guests attempting to like are sent to `/login`.
+- **Dashboard likes** — Published quiz cards show a heart button and a separate like count. The heart is filled when liked and outlined otherwise; likes update optimistically, guard against rapid repeat clicks, and roll back with an error toast if the request fails. On cards the current user owns, the count is a button that opens the creator-only likers dialog; for everyone else it is plain, non-clickable text. Guests attempting to like are sent to `/login`.
 - **Liked quizzes** — The sidebar "Liked quizzes" item loads `GET /api/users/me/liked` with pagination, loading/error states, and an empty state. Its badge uses `likedQuizCount` from the overview response (and the liked endpoint's `meta.total` once loaded), so no extra count request is required.
 - **Dashboard take actions** — All dashboard sections use the stored `allowRetakes` setting and the current user's completion state: uncompleted quizzes show "Take quiz", completed quizzes with retakes show "Take again", and completed no-retake quizzes show no take action. Direct quiz links still show the explanation when retakes are disabled.
 - **Delete confirmation** — Deleting an owned quiz opens a themed, accessible modal with the quiz title and a permanent-deletion warning. Cancel, backdrop, and Escape dismiss the dialog; confirmation shows a loading state, prevents duplicate requests, keeps errors inline for retry, and shows the existing success toast after the card is removed.
 - **Share dialog** — The owner card action opens a themed modal showing the quiz link and its 8-character code (monospace). Each has its own copy button with inline "Copied!" feedback and a toast; the link is built from the current deployment origin, so redirects and custom domains keep working.
-- **Join by code** — The sidebar and guest view expose "Enter Quiz Code". The modal accepts exactly 8 letters/numbers, auto-uppercases input, strips other characters, keeps submit disabled until complete, and supports Enter. While looking up it disables the form and shows a loading state; known codes navigate to the existing `/quiz/:id` route, invalid/unknown codes show a friendly inline message, and draft codes show the standard draft-privacy error. No attempt is created by looking up a code.
+- **Join by code** — The sidebar and guest view expose "Enter Quiz Code". The modal accepts exactly 8 letters/numbers, auto-uppercases input, strips other characters, keeps submit disabled until complete, and supports Enter. While looking up it disables the form and shows a loading state; known codes navigate to the existing `/quiz/:id` route, invalid/unknown codes show a friendly inline message, and draft codes show the standard draft-privacy error. No attempt is created by looking up a code. Guests who resolve a code are redirected to login with the quiz destination preserved.
+- **Creator likes list** — Wherever the current user owns a quiz with a visible like count — dashboard owned, liked, and taken sections, the quiz page, and a public profile's top quizzes — the count is a button. Clicking it opens the shared themed, accessible modal with loading, empty, error, and retry states; the owner sees liker usernames linked to their public profiles. Non-creators see ordinary text with no pointer or hover affordance. Identities are only fetched through the owner-only endpoint and are never embedded in public quiz responses.
+- **Public profiles** — Every creator has a public `/users/:username` page showing their total unique likes received and their top three published quizzes, each with its icon, title, like count, and unique participant count. The ranking is deterministic and draft details are excluded; no email or account-private data is exposed. When the signed-in viewer is the creator, the quiz like counts open the shared likers modal; for everyone else they are plain text, and the backend still enforces ownership.
+- **Unique participants** — Creator cards and quiz pages show one playful stat: distinct authenticated users who completed at least one attempt. Repeated attempts, retakes, revisiting results, and re-submitting do not inflate it. Because all submissions require login, anonymous traffic cannot create attempts or affect the count.
 - **Theme** — Dark/light mode toggle persisted in `localStorage`; defaults to OS preference
 - **Guest preview** — Append `?demo=1` to the overview URL to see a populated demo state
 - **Draft saving** — The quiz builder auto-saves to `localStorage` on every input change (create mode only; edit mode always loads from the server)
@@ -592,7 +676,7 @@ denormalized and repaired if a legacy document has drifted.
 |----------------------------|-----------------------------------------------------|
 | Password hashing           | bcrypt with cost factor 12                          |
 | JWT signing                | HS256, 30-day expiry, cookie-based with `Path=/`    |
-| Page-level route protection| `protectPage` server middleware redirects unauthenticated visits to `/create`, `/profile`, and `/quiz/:id/edit` to `/login` |
+| Page-level route protection| `protectPage` server middleware redirects unauthenticated visits to `/create`, `/profile`, `/quiz/:id`, and `/quiz/:id/edit` to `/login?next=<destination>` |
 | Secure cookies             | `secure: true` in production, `sameSite: "lax"`, `path: "/"` |
 | Rate limiting (global)     | 100 requests / hour per IP on `/api`                |
 | Rate limiting (auth)       | 10 requests / 15 minutes per IP on auth endpoints   |
@@ -685,10 +769,11 @@ npm run start:prod
 
 ### Testing
 
-The suite currently contains **131 tests across 7 files**, covering auth, quiz
-CRUD/submission/likes, share-code generation and lookup, schema validation,
-the quiz-taking UI, the builder, and the dashboard (including sharing and
-join-by-code flows).
+The suite currently contains **186 tests across 10 files**, covering auth,
+quiz CRUD/submission/likes, share-code generation and lookup, schema
+validation, owner-only liker lists, public profile ranking and privacy, unique
+participants, the quiz-taking UI, the builder, and the dashboard (including
+sharing and join-by-code flows).
 
 Tests run against an in-memory MongoDB provided by `mongodb-memory-server`
 (no running database required). If your environment needs a specific `mongod`

@@ -78,6 +78,10 @@ app.get("/profile", protectPage, (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "profile.html"));
 });
 
+app.get("/users/:username", (req, res) => {
+  res.sendFile(path.join(__dirname, "frontend", "public-profile.html"));
+});
+
 app.get("/quiz/:id/edit", protectPage, (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "create.html"));
 });
@@ -86,7 +90,7 @@ app.get("/quiz/:id/results", (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "results.html"));
 });
 
-app.get("/quiz/:id", (req, res) => {
+app.get("/quiz/:id", protectPage, (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "quiz.html"));
 });
 
