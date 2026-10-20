@@ -511,3 +511,60 @@
   font-size: 13px;
   color: var(--ink-secondary);
 }
+
+/* ==========================================================================
+   Unanswered Question Warnings
+   ========================================================================== */
+
+.unanswered-modal {
+  width: min(500px, 100%);
+}
+
+.unanswered-modal__icon {
+  color: #9a6700;
+  background-color: #fff8c5;
+  border-color: #eac54f;
+}
+
+[data-theme="dark"] .unanswered-modal__icon {
+  color: #f2cc60;
+  background-color: rgba(242, 204, 96, 0.13);
+  border-color: rgba(242, 204, 96, 0.35);
+}
+
+.unanswered-modal .delete-modal__description {
+  max-width: 34ch;
+  margin-inline: auto;
+}
+
+.take-question-card {
+  scroll-margin-top: 96px;
+}
+
+.take-question-card.is-unanswered {
+  border-color: rgba(207, 34, 46, 0.55);
+  box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.1);
+}
+
+[data-theme="dark"] .take-question-card.is-unanswered {
+  border-color: rgba(255, 123, 114, 0.6);
+  box-shadow: 0 0 0 3px rgba(255, 123, 114, 0.12);
+}
+
+.take-unanswered-flag {
+  margin-left: auto;
+  padding: 2px 8px;
+  color: #a40e26;
+  background-color: #ffebe9;
+  border: 1px solid #ffc1c6;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+[data-theme="dark"] .take-unanswered-flag {
+  color: #ffb3ba;
+  background-color: rgba(248, 81, 73, 0.14);
+  border-color: rgba(248, 81, 73, 0.38);
+}

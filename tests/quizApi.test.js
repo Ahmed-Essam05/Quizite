@@ -91,12 +91,13 @@ describe("Quiz API", () => {
       expect(response.status).toBe(401);
     });
 
-    it("creates a valid published quiz", async () => {
+    it("creates a valid published quiz with a share code", async () => {
       const response = await createQuizViaApi(alice);
 
       expect(response.status).toBe(201);
       expect(response.body.data.quiz.questionCount).toBe(1);
       expect(response.body.data.quiz.shareUrl).toContain("/quiz/");
+      expect(response.body.data.quiz.shareCode).toMatch(/^[A-Z0-9]{8}$/);
     });
 
     it("rejects a missing title", async () => {
@@ -276,6 +277,21 @@ describe("Quiz API", () => {
       expect(response.status).toBe(400);
     });
 
+    it("rejects client-provided share codes", async () => {
+      const createResponse = await alice.post("/api/quizzes").send({
+        title: "Quiz",
+        questions: [buildMcqQuestion()],
+        shareCode: "AAAA1111",
+      });
+      expect(createResponse.status).toBe(400);
+
+      const created = await createQuizViaApi(alice);
+      const updateResponse = await alice
+        .patch(`/api/quizzes/${created.body.data.quiz.id}`)
+        .send({ shareCode: "BBBB2222" });
+      expect(updateResponse.status).toBe(400);
+    });
+
     it("rejects publishing an empty quiz but allows an empty draft", async () => {
       const published = await alice
         .post("/api/quizzes")
@@ -344,6 +360,135 @@ describe("Quiz API", () => {
     it("returns 400 for malformed identifiers", async () => {
       const response = await alice.get("/api/quizzes/not-an-id");
       expect(response.status).toBe(400);
+    });
+  });
+
+  describe("share codes", () => {
+    it("keeps the owner's code stable across updates and dashboard loads", async () => {
+      const created = await createQuizViaApi(alice);
+      const quizId = created.body.data.quiz.id;
+      const shareCode = created.body.data.quiz.shareCode;
+
+      const updated = await alice
+        .patch(`/api/quizzes/${quizId}`)
+        .send({ title: "Updated title" });
+
+      expect(updated.status).toBe(200);
+      expect(updated.body.data.quiz.shareCode).toBe(shareCode);
+
+      const ownerQuiz = await fetchQuiz(alice, quizId);
+      expect(ownerQuiz.shareCode).toBe(shareCode);
+
+      const overview = await alice.get("/api/overview");
+      const card = overview.body.data.quizzes.find(
+        (quiz) => quiz.id === quizId,
+      );
+      expect(card.shareCode).toBe(shareCode);
+      expect(card.shareUrl).toBe(`/quiz/${quizId}`);
+
+      const publicQuiz = await request(server).get(`/api/quizzes/${quizId}`);
+      expect(publicQuiz.status).toBe(200);
+      expect(publicQuiz.body.data.quiz.shareCode).toBeUndefined();
+    });
+
+    it("finds a published quiz by code without creating an attempt", async () => {
+      const created = await createQuizViaApi(alice);
+      const quizId = created.body.data.quiz.id;
+      const shareCode = created.body.data.quiz.shareCode;
+
+      const lookup = await request(server).get(
+        `/api/quizzes/code/${shareCode.toLowerCase()}`,
+      );
+
+      expect(lookup.status).toBe(200);
+      expect(lookup.body.data.quiz).toEqual({
+        id: quizId,
+        shareUrl: `/quiz/${quizId}`,
+      });
+      expect(lookup.body.data.quiz.title).toBeUndefined();
+      expect(await QuizAttempt.countDocuments({ quiz: quizId })).toBe(0);
+
+      const storedUser = await User.findOne({ username: "bob" });
+      expect(storedUser.completedQuizzes).toHaveLength(0);
+
+      const direct = await request(server).get(`/api/quizzes/${quizId}`);
+      expect(direct.status).toBe(200);
+      expect(direct.body.data.quiz.id).toBe(quizId);
+    });
+
+    it("does not change completion or attempts for an existing taker", async () => {
+      const created = await createQuizViaApi(alice, {
+        allowRetakes: false,
+      });
+      const quizId = created.body.data.quiz.id;
+      const shareCode = created.body.data.quiz.shareCode;
+      const quiz = await fetchQuiz(bob, quizId);
+
+      await bob.post(`/api/quizzes/${quizId}/submit`).send(buildAnswers(quiz));
+      const attemptsBefore = await QuizAttempt.countDocuments({ quiz: quizId });
+      const completionBefore = await User.findOne({ username: "bob" }).lean();
+
+      const lookup = await bob.get(`/api/quizzes/code/${shareCode}`);
+      expect(lookup.status).toBe(200);
+
+      const completionAfter = await User.findOne({ username: "bob" }).lean();
+      expect(completionAfter.completedQuizzes).toHaveLength(
+        completionBefore.completedQuizzes.length,
+      );
+      expect(await QuizAttempt.countDocuments({ quiz: quizId })).toBe(
+        attemptsBefore,
+      );
+
+      const direct = await bob.get(`/api/quizzes/${quizId}`);
+      expect(direct.body.data.canRetake).toBe(false);
+    });
+
+    it("refuses draft codes to anonymous users and other users", async () => {
+      const created = await createQuizViaApi(alice, { status: "draft" });
+      const quizId = created.body.data.quiz.id;
+      const shareCode = created.body.data.quiz.shareCode;
+
+      const anonymous = await request(server).get(
+        `/api/quizzes/code/${shareCode}`,
+      );
+      expect(anonymous.status).toBe(403);
+      expect(anonymous.body.data).toBeUndefined();
+
+      const other = await bob.get(`/api/quizzes/code/${shareCode}`);
+      expect(other.status).toBe(403);
+
+      const owner = await alice.get(`/api/quizzes/code/${shareCode}`);
+      expect(owner.status).toBe(200);
+      expect(owner.body.data.quiz.id).toBe(quizId);
+    });
+
+    it("returns friendly errors for invalid, unknown, and deleted codes", async () => {
+      const invalid = await request(server).get("/api/quizzes/code/ABC");
+      expect(invalid.status).toBe(400);
+      expect(invalid.body.message).toMatch(/valid 8-character quiz code/i);
+
+      const invalidCharacters = await request(server).get(
+        "/api/quizzes/code/ABCD!234",
+      );
+      expect(invalidCharacters.status).toBe(400);
+
+      const unknown = await request(server).get(
+        "/api/quizzes/code/ZZZZ9999",
+      );
+      expect(unknown.status).toBe(404);
+      expect(unknown.body.message).toBe("No quiz found with that code.");
+
+      const created = await createQuizViaApi(alice);
+      const quizId = created.body.data.quiz.id;
+      const shareCode = created.body.data.quiz.shareCode;
+
+      expect((await alice.delete(`/api/quizzes/${quizId}`)).status).toBe(204);
+
+      const deleted = await request(server).get(
+        `/api/quizzes/code/${shareCode}`,
+      );
+      expect(deleted.status).toBe(404);
+      expect(deleted.body.message).toBe("No quiz found with that code.");
     });
   });
 
@@ -522,6 +667,34 @@ describe("Quiz API", () => {
       expect(response.status).toBe(200);
       expect(response.body.data.score).toBe(3);
       expect(response.body.data.percentage).toBe(100);
+    });
+
+    it("accepts unanswered questions and grades them as no answer", async () => {
+      const created = await createGradingQuiz(alice);
+      const quizId = created.body.data.quiz.id;
+      const quiz = await fetchQuiz(alice, quizId);
+      const firstQuestion = quiz.pages[0].questions[0];
+
+      const response = await request(server)
+        .post(`/api/quizzes/${quizId}/submit`)
+        .send({
+          answers: [
+            {
+              questionId: firstQuestion.id,
+              choiceId: firstQuestion.correctChoiceId,
+            },
+          ],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.totalQuestions).toBe(3);
+      expect(response.body.data.gradedQuestions).toBe(3);
+      expect(response.body.data.score).toBe(1);
+      expect(response.body.data.percentage).toBe(33);
+      expect(response.body.data.results[1].userAnswer).toBe("No answer");
+      expect(response.body.data.results[1].isCorrect).toBe(false);
+      expect(response.body.data.results[2].userAnswer).toBe("No answer");
+      expect(response.body.data.results[2].isCorrect).toBe(false);
     });
 
     it("does not trust client-submitted correctness flags", async () => {

@@ -1,12 +1,22 @@
 import mongoose from "mongoose";
 
 import {
+  QUIZ_CODE_MAX_ATTEMPTS,
+  generateQuizCode,
+  isDuplicateShareCodeError,
+  isValidQuizCode,
+} from "../utils/quizCode.js";
+import {
   MAX_PAGES,
   MAX_QUESTIONS_PER_PAGE,
   MAX_TOTAL_QUESTIONS,
 } from "../utils/quizValidation.js";
 
 const { Schema } = mongoose;
+
+const SHARE_CODE_INDEX = { shareCode: 1 };
+const SHARE_CODE_INDEX_NAME = "shareCode_1";
+const SHARE_CODE_PARTIAL_FILTER = { shareCode: { $type: "string" } };
 
 const choiceSchema = new Schema(
   {
@@ -96,6 +106,16 @@ const quizSchema = new Schema(
       maxlength: [1000, "A description cannot exceed 1000 characters"],
       default: "",
     },
+    shareCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      required: [true, "A quiz share code is required"],
+      validate: {
+        validator: (value) => value == null || isValidQuizCode(value),
+        message: "A quiz share code must be 8 uppercase letters or numbers",
+      },
+    },
     owner: {
       type: Schema.Types.ObjectId,
       ref: "User",
@@ -154,6 +174,18 @@ const quizSchema = new Schema(
 
 quizSchema.index({ status: 1, publishedAt: -1 });
 quizSchema.index({ likes: 1, updatedAt: -1 });
+quizSchema.index(SHARE_CODE_INDEX, {
+  unique: true,
+  partialFilterExpression: SHARE_CODE_PARTIAL_FILTER,
+  _autoIndex: false,
+});
+
+quizSchema.pre("validate", function assignQuizShareCode(next) {
+  if (!this.shareCode) {
+    this.shareCode = generateQuizCode();
+  }
+  next();
+});
 
 quizSchema.pre("validate", function validateQuiz(next) {
   for (const page of this.pages) {
@@ -228,6 +260,112 @@ quizSchema.pre("validate", function validateQuiz(next) {
   next();
 });
 
+const isShareCodeIndex = (index) =>
+  Object.keys(index.key || {}).length === 1 && index.key.shareCode === 1;
+
+const isCurrentShareCodeIndex = (index) =>
+  index.unique === true &&
+  JSON.stringify(index.partialFilterExpression) ===
+    JSON.stringify(SHARE_CODE_PARTIAL_FILTER);
+
+quizSchema.statics.ensureShareCodeIndex =
+  async function ensureShareCodeIndex() {
+    let indexes;
+
+    try {
+      indexes = await this.collection.indexes();
+    } catch (error) {
+      if (error?.code !== 26 && error?.codeName !== "NamespaceNotFound") {
+        throw error;
+      }
+      indexes = [];
+    }
+
+    const shareCodeIndexes = indexes.filter(isShareCodeIndex);
+    if (shareCodeIndexes.some(isCurrentShareCodeIndex)) {
+      return;
+    }
+
+    for (const index of shareCodeIndexes) {
+      try {
+        await this.collection.dropIndex(index.name);
+      } catch (error) {
+        if (error?.code !== 27 && error?.codeName !== "IndexNotFound") {
+          throw error;
+        }
+      }
+    }
+
+    await this.collection.createIndex(SHARE_CODE_INDEX, {
+      name: SHARE_CODE_INDEX_NAME,
+      unique: true,
+      partialFilterExpression: SHARE_CODE_PARTIAL_FILTER,
+      background: true,
+    });
+  };
+
+quizSchema.statics.backfillMissingShareCodes = async function backfillMissingShareCodes({
+  maxAttempts = QUIZ_CODE_MAX_ATTEMPTS,
+  generateCode = generateQuizCode,
+} = {}) {
+  const missingFilter = {
+    $or: [
+      { shareCode: { $exists: false } },
+      { shareCode: null },
+      { shareCode: "" },
+    ],
+  };
+
+  const quizzes = await this.find(missingFilter).select("_id").lean();
+  let updated = 0;
+
+  for (const quiz of quizzes) {
+    let saved = false;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const shareCode = generateCode();
+
+      try {
+        const result = await this.collection.updateOne(
+          { _id: quiz._id, ...missingFilter },
+          { $set: { shareCode } },
+        );
+        if (result.modifiedCount || result.nModified) {
+          updated += 1;
+        }
+        saved = true;
+        break;
+      } catch (error) {
+        if (!isDuplicateShareCodeError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    if (!saved) {
+      throw new Error("Unable to generate a unique quiz share code");
+    }
+  }
+
+  return updated;
+};
+
 const Quiz = mongoose.model("Quiz", quizSchema);
+
+const initializeQuizModel = Quiz.init.bind(Quiz);
+
+Quiz.init = function init(callback) {
+  const ready = Quiz.ensureShareCodeIndex().then(() => initializeQuizModel());
+
+  if (typeof callback === "function") {
+    ready.then(
+      () => callback(),
+      (error) => callback(error),
+    );
+    return null;
+  }
+
+  return ready;
+};
 
 export default Quiz;

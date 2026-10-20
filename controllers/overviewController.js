@@ -30,7 +30,7 @@ export const getOverview = catchAsync(async (req, res) => {
     Quiz.countDocuments(filter),
     Quiz.find(filter)
       .select(
-        "title description status pages likeCount likes allowRetakes updatedAt",
+        "title description status pages likeCount likes allowRetakes shareCode updatedAt",
       )
       .sort({ updatedAt: -1, _id: -1 })
       .skip((page - 1) * limit)
@@ -56,6 +56,8 @@ export const getOverview = catchAsync(async (req, res) => {
     allowRetakes: Boolean(quiz.allowRetakes),
     completedByMe: completedQuizIds.has(String(quiz._id)),
     updatedAt: quiz.updatedAt,
+    shareUrl: `/quiz/${quiz._id}`,
+    shareCode: quiz.shareCode,
   }));
 
   const totalPages = Math.max(Math.ceil(total / limit), 1);

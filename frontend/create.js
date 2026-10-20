@@ -8,6 +8,10 @@ const MAX_QUESTIONS_PER_PAGE = 10;
 const MAX_TOTAL_QUESTIONS = 80;
 const MAX_PAGES = 8;
 const MAX_ACCEPTED_ANSWERS = 20;
+const MAX_QUIZ_TITLE_LENGTH = 150;
+const MAX_QUIZ_DESCRIPTION_LENGTH = 1000;
+const MAX_QUESTION_TITLE_LENGTH = 2000;
+const MAX_CHOICE_TEXT_LENGTH = 500;
 
 const editMatch = window.location.pathname.match(/^\/quiz\/([^/]+)\/edit\/?$/);
 const editQuizId = editMatch ? editMatch[1] : null;
@@ -58,7 +62,13 @@ const questionLimitPill = document.querySelector("#question-limit-pill");
 const draftNotice = document.querySelector("#draft-notice");
 const clearDraftBtn = document.querySelector("#clear-draft-btn");
 const errorBanner = document.querySelector("#error-banner");
+const errorBannerTitle = document.querySelector("#error-banner-title");
+const errorBannerMessage = document.querySelector("#error-banner-message");
+const errorBannerList = document.querySelector("#error-banner-list");
 const toast = document.querySelector("#toast");
+
+let validationScope = null;
+let lastQuizTargetStatus = null;
 
 const saveDraftBtn = document.querySelector("#save-draft-btn");
 const publishQuizBtn = document.querySelector("#publish-quiz-btn");
@@ -66,6 +76,8 @@ const publishQuizBtn = document.querySelector("#publish-quiz-btn");
 const successModal = document.querySelector("#success-modal");
 const shareLinkInput = document.querySelector("#share-link-input");
 const copyModalLinkBtn = document.querySelector("#copy-modal-link-btn");
+const shareCodeInput = document.querySelector("#share-code-input");
+const copyModalCodeBtn = document.querySelector("#copy-modal-code-btn");
 const modalTakeLink = document.querySelector("#modal-take-link");
 
 /* --------------------------------------------------------------------------
@@ -110,15 +122,142 @@ const showToast = (message) => {
   }, 3200);
 };
 
-const showError = (message) => {
-  errorBanner.textContent = message;
-  errorBanner.hidden = false;
-  window.scrollTo({ top: 0, behavior: "smooth" });
+const clearValidationUI = () => {
+  errorBanner.hidden = true;
+  errorBannerMessage.textContent = "";
+  errorBannerMessage.hidden = true;
+  errorBannerList.innerHTML = "";
+  errorBannerList.hidden = true;
+
+  document
+    .querySelectorAll(".create-main .is-invalid")
+    .forEach((element) => {
+      element.classList.remove("is-invalid");
+      element.removeAttribute("aria-invalid");
+    });
+
+  document
+    .querySelectorAll(".create-main [data-field-error]")
+    .forEach((element) => {
+      element.textContent = "";
+      element.hidden = true;
+    });
+
+  savedQuestionsList
+    .querySelectorAll(".question-card-item__validation")
+    .forEach((element) => element.remove());
+  savedQuestionsList.querySelectorAll(".question-card-item").forEach((card) => {
+    card.classList.remove("is-invalid");
+    card.removeAttribute("aria-invalid");
+    card.removeAttribute("aria-describedby");
+  });
 };
 
-const clearError = () => {
-  errorBanner.textContent = "";
-  errorBanner.hidden = true;
+const focusValidationTarget = (target) => {
+  if (!target) return;
+  target.focus?.({ preventScroll: true });
+  target.scrollIntoView?.({ behavior: "smooth", block: "center" });
+};
+
+const applyValidationStyles = (errors) => {
+  const cardErrors = new Map();
+
+  errors.forEach((error) => {
+    (error.controls || []).filter(Boolean).forEach((control) => {
+      control.classList.add("is-invalid");
+      control.setAttribute("aria-invalid", "true");
+    });
+
+    if (error.errorElement) {
+      error.errorElement.textContent = error.message;
+      error.errorElement.hidden = false;
+    }
+
+    if (error.card) {
+      const messages = cardErrors.get(error.card) || [];
+      messages.push(error.message);
+      cardErrors.set(error.card, messages);
+    }
+  });
+
+  cardErrors.forEach((messages, card) => {
+    if (!card) return;
+    const questionIndex = card.dataset.questionIndex;
+    const validationId = `question-card-error-${questionIndex}`;
+    const validation = document.createElement("div");
+    validation.className = "question-card-item__validation";
+    validation.id = validationId;
+
+    const heading = document.createElement("p");
+    heading.className = "question-card-item__validation-title";
+    heading.textContent = "This question needs attention:";
+    validation.appendChild(heading);
+
+    const list = document.createElement("ul");
+    messages.forEach((message) => {
+      const item = document.createElement("li");
+      item.textContent = message;
+      list.appendChild(item);
+    });
+    validation.appendChild(list);
+
+    card.classList.add("is-invalid");
+    card.setAttribute("aria-invalid", "true");
+    card.setAttribute("aria-describedby", validationId);
+    card.appendChild(validation);
+  });
+};
+
+const showValidationErrors = (
+  errors,
+  { title = "Please fix the following", focusFirst = false } = {},
+) => {
+  clearValidationUI();
+
+  if (errors.length === 0) {
+    validationScope = null;
+    return;
+  }
+
+  applyValidationStyles(errors);
+
+  errorBannerTitle.textContent = title;
+  errorBannerMessage.hidden = true;
+  errorBannerList.innerHTML = "";
+
+  errors.forEach((error) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "create-validation-alert__link";
+    button.textContent = error.message;
+    button.addEventListener("click", () => {
+      focusValidationTarget(error.focusTarget || error.controls?.[0]);
+    });
+    item.appendChild(button);
+    errorBannerList.appendChild(item);
+  });
+
+  errorBannerList.hidden = false;
+  errorBanner.hidden = false;
+
+  if (focusFirst) {
+    focusValidationTarget(errors[0].focusTarget || errors[0].controls?.[0]);
+  }
+};
+
+const showError = (
+  message,
+  { title = "Unable to complete that action" } = {},
+) => {
+  clearValidationUI();
+  validationScope = null;
+
+  errorBannerTitle.textContent = title;
+  errorBannerMessage.textContent = message;
+  errorBannerMessage.hidden = false;
+  errorBanner.hidden = false;
+  window.scrollTo({ top: 0, behavior: "smooth" });
 };
 
 const escapeHtml = (value) =>
@@ -128,6 +267,335 @@ const escapeHtml = (value) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+
+const getMcqSelectedIndex = () => {
+  const selected = choicesList.querySelector(
+    'input[name="mcq-correct-choice"]:checked',
+  );
+  return selected ? Number(selected.value) : -1;
+};
+
+const validateQuestionDraft = () => {
+  const errors = [];
+  const title = questionTitleInput.value.trim();
+  const titleError = document.querySelector("#question-title-error");
+
+  if (!title) {
+    errors.push({
+      message: "Enter the question text.",
+      controls: [questionTitleInput],
+      errorElement: titleError,
+      focusTarget: questionTitleInput,
+    });
+  } else if (title.length > MAX_QUESTION_TITLE_LENGTH) {
+    errors.push({
+      message: `Question text cannot exceed ${MAX_QUESTION_TITLE_LENGTH} characters.`,
+      controls: [questionTitleInput],
+      errorElement: titleError,
+      focusTarget: questionTitleInput,
+    });
+  }
+
+  if (currentQuestionType === "multipleChoice") {
+    const correctError = document.querySelector("#mcq-answer-error");
+    const choiceRadios = Array.from(
+      choicesList.querySelectorAll('input[name="mcq-correct-choice"]'),
+    );
+
+    if (mcqChoices.length < 2) {
+      errors.push({
+        message: "Add at least 2 answer choices.",
+        controls: choiceRadios,
+        errorElement: correctError,
+        focusTarget: addChoiceBtn,
+      });
+    } else if (mcqChoices.length > 6) {
+      errors.push({
+        message: "Use no more than 6 answer choices.",
+        controls: choiceRadios,
+        errorElement: correctError,
+        focusTarget: choicesList,
+      });
+    }
+
+    const nonEmptyChoiceCount = mcqChoices.filter((choice) =>
+      choice.trim(),
+    ).length;
+    const needsMoreChoices = nonEmptyChoiceCount < 2;
+
+    mcqChoices.forEach((choiceText, index) => {
+      const input = choicesList.querySelector(
+        `[data-choice-input="${index}"]`,
+      );
+      const errorElement = choicesList.querySelector(
+        `[data-choice-error="${index}"]`,
+      );
+      const trimmed = choiceText.trim();
+
+      if (!trimmed && needsMoreChoices) {
+        errors.push({
+          message: `Choice ${index + 1} needs text.`,
+          controls: [input],
+          errorElement,
+          focusTarget: input,
+        });
+      } else if (trimmed.length > MAX_CHOICE_TEXT_LENGTH) {
+        errors.push({
+          message: `Choice ${index + 1} cannot exceed ${MAX_CHOICE_TEXT_LENGTH} characters.`,
+          controls: [input],
+          errorElement,
+          focusTarget: input,
+        });
+      }
+    });
+
+    const selectedIndex = getMcqSelectedIndex();
+    if (selectedIndex < 0 || selectedIndex >= mcqChoices.length) {
+      errors.push({
+        message: "Select the correct answer.",
+        controls: choiceRadios,
+        errorElement: correctError,
+        focusTarget: choiceRadios[0],
+      });
+    } else if (!mcqChoices[selectedIndex].trim() && !needsMoreChoices) {
+      const selectedInput = choicesList.querySelector(
+        `[data-choice-input="${selectedIndex}"]`,
+      );
+      errors.push({
+        message: "The selected correct choice needs text.",
+        controls: [selectedInput],
+        errorElement: choicesList.querySelector(
+          `[data-choice-error="${selectedIndex}"]`,
+        ),
+        focusTarget: selectedInput,
+      });
+    }
+  } else if (currentQuestionType === "trueFalse") {
+    const correct = document.querySelector(
+      'input[name="tf-correct"]:checked',
+    );
+    if (!correct) {
+      errors.push({
+        message: "Select True or False as the correct answer.",
+        controls: Array.from(
+          document.querySelectorAll('input[name="tf-correct"]'),
+        ),
+        errorElement: document.querySelector("#tf-answer-error"),
+        focusTarget: document.querySelector('input[name="tf-correct"]'),
+      });
+    }
+  } else if (currentQuestionType === "writtenAnswer") {
+    const groupError = document.querySelector("#accepted-answers-error");
+
+    if (writtenAcceptedAnswers.length > MAX_ACCEPTED_ANSWERS) {
+      errors.push({
+        message: `Use no more than ${MAX_ACCEPTED_ANSWERS} accepted answers.`,
+        errorElement: groupError,
+        focusTarget: addAcceptedAnswerBtn,
+      });
+    }
+
+    writtenAcceptedAnswers.forEach((answer, index) => {
+      const trimmed = answer.trim();
+      if (!trimmed) return;
+      if (trimmed.length > MAX_QUESTION_TITLE_LENGTH) {
+        const input = acceptedAnswersList.querySelector(
+          `[data-answer-input="${index}"]`,
+        );
+        errors.push({
+          message: `Accepted answer ${index + 1} cannot exceed ${MAX_QUESTION_TITLE_LENGTH} characters.`,
+          controls: [input],
+          errorElement: acceptedAnswersList.querySelector(
+            `[data-answer-error="${index}"]`,
+          ),
+          focusTarget: input,
+        });
+      }
+    });
+  }
+
+  return errors;
+};
+
+const validateSavedQuestion = (question, index) => {
+  const prefix = `Question ${index + 1}:`;
+  const messages = [];
+
+  if (!question || typeof question !== "object") {
+    return [`${prefix} the question data is invalid.`];
+  }
+
+  const title =
+    typeof question.title === "string" ? question.title.trim() : "";
+  if (!title) {
+    messages.push(`${prefix} question text is required.`);
+  } else if (title.length > MAX_QUESTION_TITLE_LENGTH) {
+    messages.push(
+      `${prefix} question text cannot exceed ${MAX_QUESTION_TITLE_LENGTH} characters.`,
+    );
+  }
+
+  if (
+    !["multipleChoice", "trueFalse", "writtenAnswer"].includes(question.type)
+  ) {
+    messages.push(`${prefix} the question type is invalid.`);
+    return messages;
+  }
+
+  if (question.required !== undefined && typeof question.required !== "boolean") {
+    messages.push(`${prefix} the required setting is invalid.`);
+  }
+
+  const choices = Array.isArray(question.choices) ? question.choices : [];
+  const correctIndex = Number(question.correctChoiceIndex);
+
+  if (question.type === "multipleChoice") {
+    if (choices.length < 2 || choices.length > 6) {
+      messages.push(`${prefix} multiple-choice questions need 2 to 6 choices.`);
+    }
+
+    choices.forEach((choice, choiceIndex) => {
+      const text =
+        typeof choice === "string" ? choice.trim() : choice?.text?.trim();
+      if (!text) {
+        messages.push(`${prefix} choice ${choiceIndex + 1} needs text.`);
+      } else if (text.length > MAX_CHOICE_TEXT_LENGTH) {
+        messages.push(
+          `${prefix} choice ${choiceIndex + 1} cannot exceed ${MAX_CHOICE_TEXT_LENGTH} characters.`,
+        );
+      }
+    });
+
+    if (
+      !Number.isInteger(correctIndex) ||
+      correctIndex < 0 ||
+      correctIndex >= choices.length
+    ) {
+      messages.push(`${prefix} select the correct choice.`);
+    }
+  } else if (question.type === "trueFalse") {
+    const choiceTexts = choices.map((choice) =>
+      typeof choice === "string" ? choice : choice?.text,
+    );
+    if (
+      choiceTexts.length !== 2 ||
+      choiceTexts[0] !== "True" ||
+      choiceTexts[1] !== "False"
+    ) {
+      messages.push(`${prefix} true/false choices must be True and False.`);
+    }
+    if (
+      !Number.isInteger(correctIndex) ||
+      (correctIndex !== 0 && correctIndex !== 1)
+    ) {
+      messages.push(`${prefix} select the correct choice.`);
+    }
+  } else {
+    if (choices.length > 0) {
+      messages.push(`${prefix} written-answer questions cannot use choices.`);
+    }
+
+    if (
+      question.acceptedAnswers !== undefined &&
+      !Array.isArray(question.acceptedAnswers)
+    ) {
+      messages.push(`${prefix} accepted answers must be a list.`);
+    }
+    const acceptedAnswers = Array.isArray(question.acceptedAnswers)
+      ? question.acceptedAnswers
+      : [];
+    if (acceptedAnswers.length > MAX_ACCEPTED_ANSWERS) {
+      messages.push(
+        `${prefix} use no more than ${MAX_ACCEPTED_ANSWERS} accepted answers.`,
+      );
+    }
+    acceptedAnswers.forEach((answer, answerIndex) => {
+      if (typeof answer !== "string" || !answer.trim()) {
+        messages.push(
+          `${prefix} accepted answer ${answerIndex + 1} cannot be empty.`,
+        );
+      } else if (answer.trim().length > MAX_QUESTION_TITLE_LENGTH) {
+        messages.push(
+          `${prefix} accepted answer ${answerIndex + 1} cannot exceed ${MAX_QUESTION_TITLE_LENGTH} characters.`,
+        );
+      }
+    });
+  }
+
+  return messages;
+};
+
+const validateQuizForSave = (targetStatus) => {
+  const errors = [];
+  const title = quizTitleInput.value.trim();
+  const description = quizDescInput.value.trim();
+  const titleError = document.querySelector("#quiz-title-error");
+  const descriptionError = document.querySelector("#quiz-description-error");
+
+  if (!title) {
+    errors.push({
+      message: "Enter a quiz title.",
+      controls: [quizTitleInput],
+      errorElement: titleError,
+      focusTarget: quizTitleInput,
+    });
+  } else if (title.length > MAX_QUIZ_TITLE_LENGTH) {
+    errors.push({
+      message: `Quiz title cannot exceed ${MAX_QUIZ_TITLE_LENGTH} characters.`,
+      controls: [quizTitleInput],
+      errorElement: titleError,
+      focusTarget: quizTitleInput,
+    });
+  }
+
+  if (description.length > MAX_QUIZ_DESCRIPTION_LENGTH) {
+    errors.push({
+      message: `Description cannot exceed ${MAX_QUIZ_DESCRIPTION_LENGTH} characters.`,
+      controls: [quizDescInput],
+      errorElement: descriptionError,
+      focusTarget: quizDescInput,
+    });
+  }
+
+  if (targetStatus === "published" && quizState.questions.length === 0) {
+    errors.push({
+      message: "Add at least one question before publishing.",
+      focusTarget: addQuestionBtn,
+    });
+  }
+
+  if (quizState.questions.length > MAX_TOTAL_QUESTIONS) {
+    errors.push({
+      message: `A quiz cannot contain more than ${MAX_TOTAL_QUESTIONS} questions.`,
+      focusTarget: addQuestionBtn,
+    });
+  }
+
+  quizState.questions.forEach((question, index) => {
+    const card = savedQuestionsList.querySelector(
+      `[data-question-index="${index}"]`,
+    );
+    validateSavedQuestion(question, index).forEach((message) => {
+      errors.push({
+        message,
+        card,
+        focusTarget: card,
+      });
+    });
+  });
+
+  return errors;
+};
+
+const refreshQuestionValidation = () => {
+  if (validationScope !== "question") return;
+  showValidationErrors(validateQuestionDraft());
+};
+
+const refreshQuizValidation = () => {
+  if (validationScope !== "quiz" || !lastQuizTargetStatus) return;
+  showValidationErrors(validateQuizForSave(lastQuizTargetStatus));
+};
 
 /* --------------------------------------------------------------------------
    Local storage draft persistence
@@ -209,6 +677,8 @@ clearDraftBtn?.addEventListener("click", () => {
   if (allowRetakesInput) allowRetakesInput.checked = false;
   if (showCorrectAnswersInput) showCorrectAnswersInput.checked = false;
   draftNotice.hidden = true;
+  clearValidationUI();
+  validationScope = null;
   renderSavedQuestions();
   showToast("Draft discarded.");
 });
@@ -231,6 +701,10 @@ typeTabs.forEach((tab) => {
     mcqContainer.hidden = currentQuestionType !== "multipleChoice";
     tfContainer.hidden = currentQuestionType !== "trueFalse";
     writtenContainer.hidden = currentQuestionType !== "writtenAnswer";
+    if (validationScope === "question") {
+      clearValidationUI();
+      validationScope = null;
+    }
   });
 });
 
@@ -252,14 +726,24 @@ const renderMcqChoices = () => {
           aria-label="Choice ${index + 1} is correct"
         />
       </label>
-      <input
-        class="choice-text-input"
-        type="text"
-        placeholder="Choice ${index + 1} text..."
-        value="${escapeHtml(choiceText)}"
-        data-choice-input="${index}"
-        maxlength="500"
-      />
+      <div class="choice-field">
+        <input
+          class="choice-text-input"
+          type="text"
+          placeholder="Choice ${index + 1} text..."
+          value="${escapeHtml(choiceText)}"
+          data-choice-input="${index}"
+          maxlength="${MAX_CHOICE_TEXT_LENGTH}"
+          aria-describedby="choice-error-${index}"
+        />
+        <span
+          class="field-error"
+          id="choice-error-${index}"
+          data-choice-error="${index}"
+          data-field-error
+          hidden
+        ></span>
+      </div>
       <button
         class="btn-remove-choice"
         type="button"
@@ -281,12 +765,14 @@ choicesList.addEventListener("input", (e) => {
   if (input) {
     const idx = Number(input.dataset.choiceInput);
     mcqChoices[idx] = input.value;
+    refreshQuestionValidation();
   }
 });
 
 choicesList.addEventListener("change", (e) => {
   if (e.target.name === "mcq-correct-choice") {
     mcqCorrectIndex = Number(e.target.value);
+    refreshQuestionValidation();
   }
 });
 
@@ -299,6 +785,7 @@ choicesList.addEventListener("click", (e) => {
       mcqCorrectIndex = Math.max(0, mcqChoices.length - 1);
     }
     renderMcqChoices();
+    refreshQuestionValidation();
   }
 });
 
@@ -309,6 +796,7 @@ addChoiceBtn.addEventListener("click", () => {
     // Focus the new choice input
     const inputs = choicesList.querySelectorAll(".choice-text-input");
     inputs[inputs.length - 1]?.focus();
+    refreshQuestionValidation();
   }
 });
 
@@ -323,14 +811,24 @@ const renderAcceptedAnswers = () => {
     .map(
       (answer, index) => `
     <div class="choice-item-row" data-answer-index="${index}">
-      <input
-        class="choice-text-input"
-        type="text"
-        placeholder="Accepted answer ${index + 1}..."
-        value="${escapeHtml(answer)}"
-        data-answer-input="${index}"
-        maxlength="2000"
-      />
+      <div class="choice-field">
+        <input
+          class="choice-text-input"
+          type="text"
+          placeholder="Accepted answer ${index + 1}..."
+          value="${escapeHtml(answer)}"
+          data-answer-input="${index}"
+          maxlength="${MAX_QUESTION_TITLE_LENGTH}"
+          aria-describedby="accepted-answer-error-${index}"
+        />
+        <span
+          class="field-error"
+          id="accepted-answer-error-${index}"
+          data-answer-error="${index}"
+          data-field-error
+          hidden
+        ></span>
+      </div>
       <button
         class="btn-remove-choice"
         type="button"
@@ -355,6 +853,7 @@ acceptedAnswersList?.addEventListener("input", (e) => {
   if (input) {
     const idx = Number(input.dataset.answerInput);
     writtenAcceptedAnswers[idx] = input.value;
+    refreshQuestionValidation();
   }
 });
 
@@ -364,6 +863,7 @@ acceptedAnswersList?.addEventListener("click", (e) => {
     const idx = Number(removeBtn.dataset.removeAnswer);
     writtenAcceptedAnswers.splice(idx, 1);
     renderAcceptedAnswers();
+    refreshQuestionValidation();
   }
 });
 
@@ -374,6 +874,7 @@ addAcceptedAnswerBtn?.addEventListener("click", () => {
     const inputs =
       acceptedAnswersList.querySelectorAll(".choice-text-input");
     inputs[inputs.length - 1]?.focus();
+    refreshQuestionValidation();
   }
 });
 
@@ -425,7 +926,7 @@ const renderQuestionCard = (q, idx) => {
   }
 
   return `
-  <article class="question-card-item" data-question-index="${idx}">
+  <article class="question-card-item" data-question-index="${idx}" tabindex="-1">
     <div class="question-card-item__top">
       <div class="question-card-item__meta">
         <span class="question-num">Q${idx + 1}</span>
@@ -513,6 +1014,7 @@ savedQuestionsList.addEventListener("click", (e) => {
     quizState.questions.splice(idx, 1);
     renderSavedQuestions();
     saveDraftToStorage();
+    refreshQuizValidation();
     showToast("Question removed.");
   }
 });
@@ -522,47 +1024,44 @@ savedQuestionsList.addEventListener("click", (e) => {
    -------------------------------------------------------------------------- */
 
 addQuestionBtn.addEventListener("click", () => {
-  clearError();
+  clearValidationUI();
+  validationScope = null;
 
   if (quizState.questions.length >= MAX_TOTAL_QUESTIONS) {
     showError(
       `A quiz cannot contain more than ${MAX_TOTAL_QUESTIONS} questions across ${MAX_PAGES} pages.`,
+      { title: "Question limit reached" },
     );
     return;
   }
 
-  const title = questionTitleInput.value.trim();
-  if (!title) {
-    showError("Please enter a question title.");
-    questionTitleInput.focus();
+  const errors = validateQuestionDraft();
+  if (errors.length > 0) {
+    validationScope = "question";
+    showValidationErrors(errors, {
+      title: "Please fix this question",
+      focusFirst: true,
+    });
     return;
   }
 
+  const title = questionTitleInput.value.trim();
   let newQuestion = null;
 
   if (currentQuestionType === "multipleChoice") {
     const validChoices = mcqChoices
-      .map((c) => c.trim())
-      .filter((c) => c.length > 0);
-
-    if (validChoices.length < 2) {
-      showError(
-        "Multiple choice questions require at least 2 non-empty choices.",
-      );
-      return;
-    }
-
-    if (validChoices.length > 6) {
-      showError("Multiple choice questions allow at most 6 choices.");
-      return;
-    }
+      .map((choice, index) => ({ text: choice.trim(), index }))
+      .filter((choice) => choice.text.length > 0);
+    const selectedIndex = getMcqSelectedIndex();
+    const correctChoiceIndex = validChoices.findIndex(
+      (choice) => choice.index === selectedIndex,
+    );
 
     newQuestion = {
       type: "multipleChoice",
       title,
-      choices: validChoices.map((c) => ({ text: c })),
-      correctChoiceIndex:
-        mcqCorrectIndex < validChoices.length ? mcqCorrectIndex : 0,
+      choices: validChoices.map((choice) => ({ text: choice.text })),
+      correctChoiceIndex: correctChoiceIndex >= 0 ? correctChoiceIndex : 0,
       required: true,
     };
   } else if (currentQuestionType === "trueFalse") {
@@ -595,6 +1094,8 @@ addQuestionBtn.addEventListener("click", () => {
     const assignedPage =
       Math.floor(quizState.questions.length / MAX_QUESTIONS_PER_PAGE) + 1;
     quizState.questions.push(newQuestion);
+    validationScope = null;
+    clearValidationUI();
     renderSavedQuestions();
     saveDraftToStorage();
 
@@ -615,23 +1116,24 @@ addQuestionBtn.addEventListener("click", () => {
    -------------------------------------------------------------------------- */
 
 const submitQuizToServer = async (targetStatus) => {
-  clearError();
+  clearValidationUI();
+  validationScope = null;
+  lastQuizTargetStatus = targetStatus;
+
+  const errors = validateQuizForSave(targetStatus);
+  if (errors.length > 0) {
+    validationScope = "quiz";
+    showValidationErrors(errors, {
+      title:
+        targetStatus === "published"
+          ? "Please fix these issues before publishing"
+          : "Please fix these issues before saving",
+      focusFirst: true,
+    });
+    return;
+  }
 
   const title = quizTitleInput.value.trim();
-  if (!title) {
-    showError("Please enter a title for your quiz.");
-    quizTitleInput.focus();
-    return;
-  }
-
-  if (targetStatus === "published" && quizState.questions.length === 0) {
-    showError(
-      "A published quiz must contain at least one question. Add a question or save as a draft.",
-    );
-    questionTitleInput.focus();
-    return;
-  }
-
   const payload = {
     title,
     description: quizDescInput.value.trim(),
@@ -680,10 +1182,15 @@ const submitQuizToServer = async (targetStatus) => {
       localStorage.removeItem(STORAGE_KEY);
     }
 
+    clearValidationUI();
+    validationScope = null;
+    lastQuizTargetStatus = null;
+
     const quizData = data.data.quiz;
     const fullShareUrl = `${window.location.origin}${quizData.shareUrl}`;
 
     shareLinkInput.value = fullShareUrl;
+    shareCodeInput.value = quizData.shareCode || "";
     modalTakeLink.href = quizData.shareUrl;
 
     const modalTitle = document.querySelector("#modal-title");
@@ -724,6 +1231,23 @@ copyModalLinkBtn.addEventListener("click", () => {
     shareLinkInput.select();
     document.execCommand("copy");
     copyModalLinkBtn.textContent = "Copied!";
+  }
+});
+
+copyModalCodeBtn.addEventListener("click", () => {
+  if (!shareCodeInput.value) return;
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(shareCodeInput.value).then(() => {
+      copyModalCodeBtn.textContent = "Copied!";
+      window.setTimeout(() => {
+        copyModalCodeBtn.textContent = "Copy code";
+      }, 2000);
+    });
+  } else {
+    shareCodeInput.select();
+    document.execCommand("copy");
+    copyModalCodeBtn.textContent = "Copied!";
   }
 });
 
@@ -827,6 +1351,11 @@ quizDescInput.addEventListener("input", saveDraftToStorage);
 quizStatusSelect.addEventListener("change", saveDraftToStorage);
 allowRetakesInput?.addEventListener("change", saveDraftToStorage);
 showCorrectAnswersInput?.addEventListener("change", saveDraftToStorage);
+
+quizTitleInput.addEventListener("input", refreshQuizValidation);
+quizDescInput.addEventListener("input", refreshQuizValidation);
+questionTitleInput.addEventListener("input", refreshQuestionValidation);
+tfContainer.addEventListener("change", refreshQuestionValidation);
 
 const ensureAuthenticated = async () => {
   try {

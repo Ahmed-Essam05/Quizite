@@ -36,11 +36,19 @@ const likeBtn = document.querySelector("#like-btn");
 const likeCountEl = document.querySelector("#like-count");
 const statusNoteEl = document.querySelector("#quiz-status-note");
 
+const unansweredModal = document.querySelector("#unanswered-modal");
+const unansweredModalMessage = document.querySelector(
+  "#unanswered-modal-message",
+);
+const reviewUnansweredBtn = document.querySelector("#review-unanswered-btn");
+const submitAnywayBtn = document.querySelector("#submit-anyway-btn");
+
 let currentQuizData = null;
 let likedByMe = false;
 let canRetake = true;
 let currentPageIndex = 0;
 let isSubmitting = false;
+let lastFocusedBeforeModal = null;
 
 /* --------------------------------------------------------------------------
    Theme management
@@ -327,18 +335,205 @@ nextPageBtn?.addEventListener("click", () => {
 });
 
 /* --------------------------------------------------------------------------
+   Unanswered Questions
+   -------------------------------------------------------------------------- */
+
+const getQuestionCards = () =>
+  Array.from(questionsArea.querySelectorAll(".take-question-card"));
+
+const getDisplayedQuestionNumber = (card, index) => {
+  const label = card.querySelector(".take-question-num")?.textContent || "";
+  const match = label.match(/\d+/);
+  return match ? Number(match[0]) : index + 1;
+};
+
+const isQuestionAnswered = (card) => {
+  const textarea = card.querySelector(
+    'textarea[data-type="writtenAnswer"]',
+  );
+  if (textarea) {
+    return textarea.value.trim().length > 0;
+  }
+  return Boolean(card.querySelector('input[type="radio"]:checked'));
+};
+
+const getUnansweredQuestions = () =>
+  getQuestionCards()
+    .map((card, index) => ({
+      card,
+      number: getDisplayedQuestionNumber(card, index),
+      answered: isQuestionAnswered(card),
+    }))
+    .filter((question) => !question.answered);
+
+const formatQuestionNumbers = (numbers) => {
+  if (numbers.length === 1) {
+    return `Question ${numbers[0]}`;
+  }
+  if (numbers.length === 2) {
+    return `Questions ${numbers[0]} and ${numbers[1]}`;
+  }
+  const leading = numbers.slice(0, -1).join(", ");
+  return `Questions ${leading}, and ${numbers[numbers.length - 1]}`;
+};
+
+const setQuestionUnansweredIndicator = (card, isUnanswered) => {
+  if (!card) return;
+  card.classList.toggle("is-unanswered", isUnanswered);
+
+  let indicator = card.querySelector(".take-unanswered-flag");
+  if (isUnanswered && !indicator) {
+    indicator = document.createElement("span");
+    indicator.className = "take-unanswered-flag";
+    indicator.textContent = "Unanswered";
+    card.querySelector(".take-question-header")?.appendChild(indicator);
+  } else if (!isUnanswered && indicator) {
+    indicator.remove();
+  }
+};
+
+const updateUnansweredIndicators = (unanswered = getUnansweredQuestions()) => {
+  const unansweredCards = new Set(
+    unanswered.map((question) => question.card),
+  );
+  getQuestionCards().forEach((card) => {
+    setQuestionUnansweredIndicator(card, unansweredCards.has(card));
+  });
+};
+
+const closeUnansweredModal = ({ restoreFocus = true } = {}) => {
+  if (!unansweredModal || unansweredModal.hidden) return;
+  unansweredModal.hidden = true;
+  document.body.classList.remove("delete-modal-open");
+
+  if (restoreFocus && lastFocusedBeforeModal?.isConnected) {
+    lastFocusedBeforeModal.focus();
+  }
+  lastFocusedBeforeModal = null;
+};
+
+const openUnansweredModal = (unanswered) => {
+  if (!unansweredModal || unanswered.length === 0) return false;
+
+  updateUnansweredIndicators(unanswered);
+  unansweredModalMessage.textContent = `You haven't answered ${formatQuestionNumbers(
+    unanswered.map((question) => question.number),
+  )}. Are you sure you want to submit your quiz?`;
+
+  lastFocusedBeforeModal =
+    document.activeElement instanceof window.HTMLElement
+      ? document.activeElement
+      : submitBtn;
+  unansweredModal.hidden = false;
+  document.body.classList.add("delete-modal-open");
+  reviewUnansweredBtn?.focus({ preventScroll: true });
+  return true;
+};
+
+unansweredModal?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeUnansweredModal();
+    return;
+  }
+
+  if (event.key !== "Tab") return;
+
+  const focusable = Array.from(
+    unansweredModal.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled])',
+    ),
+  );
+  if (focusable.length === 0) return;
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+
+  if (event.shiftKey && (active === first || !unansweredModal.contains(active))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
+unansweredModal?.addEventListener("click", (event) => {
+  if (event.target === unansweredModal) {
+    closeUnansweredModal();
+  }
+});
+
+reviewUnansweredBtn?.addEventListener("click", () => {
+  const unanswered = getUnansweredQuestions();
+  if (unanswered.length === 0) {
+    closeUnansweredModal();
+    return;
+  }
+
+  const firstUnanswered = unanswered[0];
+  const pageSection = firstUnanswered.card.closest(".take-page-section");
+  const pageIndex = Number(pageSection?.dataset.pageIndex);
+
+  closeUnansweredModal({ restoreFocus: false });
+  if (Number.isInteger(pageIndex)) {
+    showTakePage(pageIndex);
+  }
+  updateUnansweredIndicators(unanswered);
+
+  const focusTarget = firstUnanswered.card.querySelector(
+    'textarea, input[type="radio"]',
+  );
+  focusTarget?.focus({ preventScroll: true });
+  firstUnanswered.card.scrollIntoView?.({
+    behavior: "smooth",
+    block: "center",
+  });
+});
+
+questionsArea.addEventListener("input", (event) => {
+  const card = event.target.closest(".take-question-card");
+  if (card) {
+    setQuestionUnansweredIndicator(card, !isQuestionAnswered(card));
+  }
+});
+
+questionsArea.addEventListener("change", (event) => {
+  const card = event.target.closest(".take-question-card");
+  if (card) {
+    setQuestionUnansweredIndicator(card, !isQuestionAnswered(card));
+  }
+});
+
+/* --------------------------------------------------------------------------
    Submit Answers
    -------------------------------------------------------------------------- */
 
 const resetSubmitState = () => {
+  closeUnansweredModal({ restoreFocus: false });
   isSubmitting = false;
   submitBtn.disabled = false;
   submitBtn.textContent = "Submit Answers";
 };
 
-formEl.addEventListener("submit", async (e) => {
+formEl.addEventListener("submit", (e) => {
   e.preventDefault();
 
+  if (isSubmitting || (unansweredModal && !unansweredModal.hidden)) {
+    return;
+  }
+
+  const unanswered = getUnansweredQuestions();
+  if (unanswered.length > 0) {
+    openUnansweredModal(unanswered);
+    return;
+  }
+
+  submitAnswers();
+});
+
+const submitAnswers = async () => {
   if (isSubmitting) return;
   isSubmitting = true;
 
@@ -410,6 +605,12 @@ formEl.addEventListener("submit", async (e) => {
     showToast("A network error occurred while submitting.");
     resetSubmitState();
   }
+};
+
+submitAnywayBtn?.addEventListener("click", () => {
+  if (isSubmitting) return;
+  closeUnansweredModal();
+  submitAnswers();
 });
 
 /* --------------------------------------------------------------------------

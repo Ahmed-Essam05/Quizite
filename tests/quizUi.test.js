@@ -58,15 +58,84 @@ const jsonResponse = (body, { ok = true, status = 200 } = {}) => ({
   json: async () => body,
 });
 
-const quizSuccessResponse = () =>
+const buildQuestion = (number, type = "multipleChoice") => {
+  const id = `question-${number}`;
+  if (type === "trueFalse") {
+    return {
+      id,
+      type,
+      title: `True or false ${number}?`,
+      choices: [
+        { id: `choice-${number}-1`, text: "True" },
+        { id: `choice-${number}-2`, text: "False" },
+      ],
+    };
+  }
+  if (type === "writtenAnswer") {
+    return {
+      id,
+      type,
+      title: `Write an answer for ${number}.`,
+    };
+  }
+  return {
+    id,
+    type,
+    title: `Question ${number}?`,
+    choices: [
+      { id: `choice-${number}-1`, text: `Choice ${number}A` },
+      { id: `choice-${number}-2`, text: `Choice ${number}B` },
+    ],
+  };
+};
+
+const buildQuizWithQuestions = (questions) => {
+  const pages = [];
+  for (let index = 0; index < questions.length; index += 10) {
+    const pageQuestions = questions.slice(index, index + 10);
+    pages.push({
+      id: `page-${pages.length + 1}`,
+      title: `Page ${pages.length + 1}`,
+      questions: pageQuestions,
+    });
+  }
+  return {
+    ...buildQuiz(),
+    questionCount: questions.length,
+    pages,
+  };
+};
+
+const quizDataResponse = (quiz) =>
   jsonResponse({
     data: {
-      quiz: buildQuiz(),
+      quiz,
       likedByMe: false,
       canRetake: true,
       isOwner: false,
     },
   });
+
+const quizSuccessResponse = (quiz = buildQuiz()) => quizDataResponse(quiz);
+
+const submitTakeForm = (window) => {
+  window.document
+    .querySelector("#quiz-take-form")
+    .dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+};
+
+const answerQuestion = (window, questionNumber) => {
+  const card = window.document.querySelector(
+    `.take-question-card[data-q-id="question-${questionNumber}"]`,
+  );
+  const radio = card?.querySelector('input[type="radio"]');
+  if (radio) {
+    radio.checked = true;
+    radio.dispatchEvent(new window.Event("change", { bubbles: true }));
+  }
+};
 
 const createQuizPage = (fetchImpl) => {
   const dom = new JSDOM(readFrontend("quiz.html"), {
@@ -302,13 +371,13 @@ describe("quiz taking page", () => {
     });
 
     await flush();
-    window.document
-      .querySelector("#quiz-take-form")
-      .dispatchEvent(
-        new window.Event("submit", { bubbles: true, cancelable: true }),
-      );
+    answerQuestion(window, 1);
+    submitTakeForm(window);
     await flush();
 
+    expect(window.document.querySelector("#unanswered-modal").hidden).toBe(
+      true,
+    );
     const submitRequest = requests.find(
       (entry) => entry.options?.method === "POST",
     );
@@ -334,15 +403,17 @@ describe("quiz taking page", () => {
     });
 
     await flush();
-    window.document
-      .querySelector("#quiz-take-form")
-      .dispatchEvent(
-        new window.Event("submit", { bubbles: true, cancelable: true }),
-      );
+    answerQuestion(window, 1);
+    submitTakeForm(window);
     await flush();
 
     const submitBtn = window.document.querySelector("#submit-quiz-btn");
     expect(navigations).toEqual([]);
+    expect(
+      window.document.querySelector(
+        '.take-question-card[data-q-id="question-1"] input[type="radio"]',
+      ).checked,
+    ).toBe(true);
     expect(window.sessionStorage.getItem(RESULT_KEY)).toBeNull();
     expect(submitBtn.disabled).toBe(false);
     expect(submitBtn.textContent.trim()).toBe("Submit Answers");
@@ -362,19 +433,259 @@ describe("quiz taking page", () => {
     });
 
     await flush();
-    window.document
-      .querySelector("#quiz-take-form")
-      .dispatchEvent(
-        new window.Event("submit", { bubbles: true, cancelable: true }),
-      );
+    answerQuestion(window, 1);
+    submitTakeForm(window);
     await flush();
 
     expect(navigations).toEqual([]);
     expect(window.document.querySelector("#submit-quiz-btn").disabled).toBe(
       false,
     );
+    expect(
+      window.document.querySelector(
+        '.take-question-card[data-q-id="question-1"] input[type="radio"]',
+      ).checked,
+    ).toBe(true);
     expect(window.document.querySelector("#toast").textContent).toContain(
       "network error",
+    );
+  });
+
+  it("warns about one unanswered question and supports Escape dismissal", async () => {
+    const requests = [];
+    const { window } = createQuizPage(async (url, options) => {
+      requests.push({ url, options });
+      return quizSuccessResponse();
+    });
+
+    await flush();
+    const submitBtn = window.document.querySelector("#submit-quiz-btn");
+    submitBtn.focus();
+    submitTakeForm(window);
+
+    const modal = window.document.querySelector("#unanswered-modal");
+    const reviewButton = window.document.querySelector(
+      "#review-unanswered-btn",
+    );
+    expect(modal.hidden).toBe(false);
+    expect(window.document.body.classList.contains("delete-modal-open")).toBe(
+      true,
+    );
+    expect(
+      window.document
+        .querySelector("#unanswered-modal-title")
+        .textContent.trim(),
+    ).toBe("You have unanswered questions");
+    expect(
+      window.document.querySelector("#unanswered-modal-message").textContent,
+    ).toBe(
+      "You haven't answered Question 1. Are you sure you want to submit your quiz?",
+    );
+    expect(window.document.activeElement).toBe(reviewButton);
+    expect(requests.some((entry) => entry.options?.method === "POST")).toBe(
+      false,
+    );
+
+    reviewButton.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(modal.hidden).toBe(true);
+    expect(window.document.body.classList.contains("delete-modal-open")).toBe(
+      false,
+    );
+    expect(window.document.activeElement).toBe(submitBtn);
+  });
+
+  it("formats two unanswered questions and covers all question types", async () => {
+    const quiz = buildQuizWithQuestions([
+      buildQuestion(1),
+      buildQuestion(2, "trueFalse"),
+      buildQuestion(3, "writtenAnswer"),
+    ]);
+    const requests = [];
+    const { window } = createQuizPage(async (url, options) => {
+      requests.push({ url, options });
+      return quizDataResponse(quiz);
+    });
+
+    await flush();
+    answerQuestion(window, 1);
+    submitTakeForm(window);
+
+    expect(
+      window.document.querySelector("#unanswered-modal-message").textContent,
+    ).toBe(
+      "You haven't answered Questions 2 and 3. Are you sure you want to submit your quiz?",
+    );
+    expect(
+      window.document.querySelectorAll(".take-question-card.is-unanswered"),
+    ).toHaveLength(2);
+    expect(requests.some((entry) => entry.options?.method === "POST")).toBe(
+      false,
+    );
+  });
+
+  it("lists unanswered question numbers across all quiz pages", async () => {
+    const questions = Array.from({ length: 12 }, (_, index) =>
+      buildQuestion(index + 1),
+    );
+    const quiz = buildQuizWithQuestions(questions);
+    const requests = [];
+    const { window } = createQuizPage(async (url, options) => {
+      requests.push({ url, options });
+      return quizDataResponse(quiz);
+    });
+
+    await flush();
+    [2, 3, 5, 6, 7, 8, 9, 10, 11].forEach((number) => {
+      answerQuestion(window, number);
+    });
+    submitTakeForm(window);
+
+    expect(
+      window.document.querySelector("#unanswered-modal-message").textContent,
+    ).toBe(
+      "You haven't answered Questions 1, 4, and 12. Are you sure you want to submit your quiz?",
+    );
+    expect(
+      window.document.querySelectorAll(".take-question-card.is-unanswered"),
+    ).toHaveLength(3);
+    expect(requests.some((entry) => entry.options?.method === "POST")).toBe(
+      false,
+    );
+  });
+
+  it("reviews the first unanswered question on its page without losing answers", async () => {
+    const questions = Array.from({ length: 11 }, (_, index) =>
+      buildQuestion(index + 1),
+    );
+    const quiz = buildQuizWithQuestions(questions);
+    const { window } = createQuizPage(async () => quizDataResponse(quiz));
+
+    await flush();
+    for (let number = 1; number <= 10; number += 1) {
+      answerQuestion(window, number);
+    }
+    const firstAnswer = window.document.querySelector(
+      '.take-question-card[data-q-id="question-1"] input[type="radio"]',
+    );
+    expect(firstAnswer.checked).toBe(true);
+
+    submitTakeForm(window);
+    window.document.querySelector("#review-unanswered-btn").click();
+
+    const pageSections = window.document.querySelectorAll(".take-page-section");
+    expect(pageSections[0].hidden).toBe(true);
+    expect(pageSections[1].hidden).toBe(false);
+    expect(
+      window.document.querySelector("#quiz-page-indicator").textContent,
+    ).toBe("Page 2 of 2");
+    expect(
+      window.document.querySelector(
+        '.take-question-card[data-q-id="question-11"] input[type="radio"]',
+      ),
+    ).toBe(window.document.activeElement);
+    expect(firstAnswer.checked).toBe(true);
+    expect(window.document.querySelector("#unanswered-modal").hidden).toBe(
+      true,
+    );
+    expect(
+      window.document
+        .querySelector('.take-question-card[data-q-id="question-11"]')
+        .classList.contains("is-unanswered"),
+    ).toBe(true);
+  });
+
+  it("submits anyway once and navigates while omitting unanswered answers", async () => {
+    const quiz = buildQuizWithQuestions([buildQuestion(1), buildQuestion(2)]);
+    const requests = [];
+    const { window, navigations } = createQuizPage(async (url, options) => {
+      requests.push({ url, options });
+      if (options?.method === "POST") {
+        return jsonResponse({
+          data: {
+            score: 1,
+            totalQuestions: 2,
+            gradedQuestions: 2,
+            percentage: 50,
+            allowRetakes: true,
+            showCorrectAnswers: false,
+            results: [
+              {
+                title: "Question 1?",
+                graded: true,
+                isCorrect: true,
+                userAnswer: "Choice 1A",
+              },
+              {
+                title: "Question 2?",
+                graded: true,
+                isCorrect: false,
+                userAnswer: "No answer",
+              },
+            ],
+          },
+        });
+      }
+      return quizDataResponse(quiz);
+    });
+
+    await flush();
+    answerQuestion(window, 1);
+    submitTakeForm(window);
+
+    const submitAnyway = window.document.querySelector("#submit-anyway-btn");
+    submitAnyway.click();
+    submitAnyway.click();
+    await flush();
+
+    const submitRequests = requests.filter(
+      (entry) => entry.options?.method === "POST",
+    );
+    expect(submitRequests).toHaveLength(1);
+    expect(JSON.parse(submitRequests[0].options.body).answers).toEqual([
+      { questionId: "question-1", choiceId: "choice-1-1" },
+    ]);
+    expect(navigations).toEqual([`/quiz/${QUIZ_ID}/results`]);
+    expect(window.document.querySelector("#unanswered-modal").hidden).toBe(
+      true,
+    );
+  });
+
+  it("keeps answers when submit-anyway fails and allows retrying", async () => {
+    const quiz = buildQuizWithQuestions([buildQuestion(1), buildQuestion(2)]);
+    const { window, navigations } = createQuizPage(async (url, options) => {
+      if (options?.method === "POST") {
+        return jsonResponse(
+          { message: "Unable to submit right now" },
+          { ok: false, status: 500 },
+        );
+      }
+      return quizDataResponse(quiz);
+    });
+
+    await flush();
+    answerQuestion(window, 1);
+    submitTakeForm(window);
+    window.document.querySelector("#submit-anyway-btn").click();
+    await flush();
+
+    expect(navigations).toEqual([]);
+    expect(window.document.querySelector("#toast").textContent).toBe(
+      "Unable to submit right now",
+    );
+    expect(
+      window.document.querySelector(
+        '.take-question-card[data-q-id="question-1"] input[type="radio"]',
+      ).checked,
+    ).toBe(true);
+    expect(window.document.querySelector("#submit-quiz-btn").disabled).toBe(
+      false,
     );
   });
 });

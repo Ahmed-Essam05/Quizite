@@ -57,24 +57,199 @@
   display: none;
 }
 
-.create-error-banner {
-  padding: 12px 16px;
-  font-size: 13px;
+.create-validation-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px 18px;
+  color: #a40e26;
+  background: linear-gradient(135deg, #fff1f3 0%, #ffe9ee 100%);
+  border: 1px solid #ffc1c6;
+  border-left: 4px solid #cf222e;
+  border-radius: 14px;
+  box-shadow: 0 3px 0 rgba(207, 34, 46, 0.08);
+  line-height: 1.45;
+}
+
+[data-theme="dark"] .create-validation-alert {
+  color: #ffb3ba;
+  background: linear-gradient(
+    135deg,
+    rgba(248, 81, 73, 0.13) 0%,
+    rgba(248, 81, 73, 0.07) 100%
+  );
+  border-color: rgba(248, 81, 73, 0.42);
+  border-left-color: #ff7b72;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.24);
+}
+
+.create-validation-alert[hidden] {
+  display: none;
+}
+
+.create-validation-alert__icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  place-items: center;
   color: #cf222e;
-  background-color: #ffebe9;
-  border: 1px solid #ff8182;
-  border-radius: 6px;
+  background-color: #ffffff;
+  border: 1px solid #ffc1c6;
+  border-radius: 11px;
+  box-shadow: 0 2px 0 rgba(207, 34, 46, 0.08);
+}
+
+[data-theme="dark"] .create-validation-alert__icon {
+  color: #ff7b72;
+  background-color: rgba(248, 81, 73, 0.16);
+  border-color: rgba(248, 81, 73, 0.38);
+  box-shadow: none;
+}
+
+.create-validation-alert__content {
+  min-width: 0;
+  padding-top: 1px;
+}
+
+.create-validation-alert__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #82071e;
+}
+
+[data-theme="dark"] .create-validation-alert__title {
+  color: #ffd7db;
+}
+
+.create-validation-alert__message {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.create-validation-alert__list {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.create-validation-alert__list[hidden] {
+  display: none;
+}
+
+.create-validation-alert__link {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.create-validation-alert__link:hover {
+  color: #82071e;
+}
+
+[data-theme="dark"] .create-validation-alert__link:hover {
+  color: #ffffff;
+}
+
+.field-error {
+  display: block;
+  color: #cf222e;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1.4;
 }
 
-[data-theme="dark"] .create-error-banner {
-  color: #f85149;
-  background-color: #2d1517;
-  border-color: #8b2529;
+[data-theme="dark"] .field-error {
+  color: #ff7b72;
 }
 
-.create-error-banner[hidden] {
+.field-error[hidden] {
   display: none;
+}
+
+.field-input.is-invalid,
+.field-textarea.is-invalid,
+.field-select.is-invalid,
+.choice-text-input.is-invalid {
+  border-color: #cf222e;
+  background-color: rgba(207, 34, 46, 0.06);
+  box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.12);
+}
+
+[data-theme="dark"] .field-input.is-invalid,
+[data-theme="dark"] .field-textarea.is-invalid,
+[data-theme="dark"] .field-select.is-invalid,
+[data-theme="dark"] .choice-text-input.is-invalid {
+  border-color: #ff7b72;
+  background-color: rgba(248, 81, 73, 0.12);
+  box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.16);
+}
+
+.choice-field {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.choice-field .choice-text-input {
+  width: 100%;
+}
+
+.question-card-item.is-invalid {
+  border-color: #ff8182;
+  box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.1);
+}
+
+[data-theme="dark"] .question-card-item.is-invalid {
+  border-color: rgba(248, 81, 73, 0.6);
+  box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.12);
+}
+
+.question-card-item:focus-visible {
+  outline: 3px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+.question-card-item__validation {
+  margin-top: 4px;
+  padding: 10px 12px;
+  color: #a40e26;
+  background-color: rgba(207, 34, 46, 0.06);
+  border: 1px solid #ffc1c6;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+[data-theme="dark"] .question-card-item__validation {
+  color: #ffb3ba;
+  background-color: rgba(248, 81, 73, 0.1);
+  border-color: rgba(248, 81, 73, 0.35);
+}
+
+.question-card-item__validation-title {
+  margin: 0 0 4px;
+  font-weight: 800;
+}
+
+.question-card-item__validation ul {
+  margin: 0;
+  padding-left: 18px;
 }
 
 /* ==========================================================================
@@ -541,6 +716,14 @@
 .share-input-row .field-input {
   font-family: monospace;
   font-size: 13px;
+}
+
+.share-code-input {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .modal-actions {

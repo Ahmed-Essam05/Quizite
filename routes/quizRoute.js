@@ -5,6 +5,7 @@ import {
   createQuiz,
   deleteQuiz,
   getQuiz,
+  getQuizByShareCode,
   likeQuiz,
   submitQuiz,
   unlikeQuiz,
@@ -14,6 +15,7 @@ import {
 const router = express.Router();
 
 router.post("/", protect, createQuiz);
+router.get("/code/:code", optionalAuth, getQuizByShareCode);
 router.get("/:id", optionalAuth, getQuiz);
 router.patch("/:id", protect, updateQuiz);
 router.delete("/:id", protect, deleteQuiz);

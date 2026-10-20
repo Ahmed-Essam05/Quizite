@@ -39,6 +39,8 @@ const dashboardQuizzes = () => [
     lastPercentage: 100,
     lastCompletedAt: now,
     updatedAt: now,
+    shareUrl: "/quiz/64b000000000000000000011",
+    shareCode: "A7K9P2XZ",
   },
   {
     id: "64b000000000000000000012",
@@ -54,6 +56,8 @@ const dashboardQuizzes = () => [
     lastPercentage: 75,
     lastCompletedAt: now,
     updatedAt: now,
+    shareUrl: "/quiz/64b000000000000000000012",
+    shareCode: "B8L0Q3WY",
   },
   {
     id: "64b000000000000000000013",
@@ -69,10 +73,16 @@ const dashboardQuizzes = () => [
     lastPercentage: null,
     lastCompletedAt: null,
     updatedAt: now,
+    shareUrl: "/quiz/64b000000000000000000013",
+    shareCode: "C9M1R4XZ",
   },
 ];
 
-const createOverviewPage = ({ deleteResponses = [] } = {}) => {
+const createOverviewPage = ({
+  deleteResponses = [],
+  joinResponses = [],
+  clipboardWrites = [],
+} = {}) => {
   const dom = new JSDOM(readFrontend("overview.html"), {
     url: "http://localhost/",
     runScripts: "outside-only",
@@ -81,7 +91,10 @@ const createOverviewPage = ({ deleteResponses = [] } = {}) => {
   const { window } = dom;
   let quizzes = dashboardQuizzes();
   const deletes = [];
+  const joins = [];
+  const navigations = [];
   const pendingDeleteResponses = [...deleteResponses];
+  const pendingJoinResponses = [...joinResponses];
 
   window.matchMedia = () => ({
     matches: false,
@@ -92,6 +105,29 @@ const createOverviewPage = ({ deleteResponses = [] } = {}) => {
   window.confirm = () => {
     throw new Error("Native browser confirmation should not be used");
   };
+  window.alert = () => {
+    throw new Error("Native browser alerts should not be used");
+  };
+  window.prompt = () => {
+    throw new Error("Native browser prompts should not be used");
+  };
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: {
+      origin: "http://localhost",
+      pathname: "/",
+      href: "http://localhost/",
+      assign: (target) => navigations.push(target),
+    },
+  });
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: async (value) => {
+        clipboardWrites.push(String(value));
+      },
+    },
+  });
   window.document.cookie = `quizite_user=${encodeURIComponent(
     JSON.stringify({ username: "alice" }),
   )}; Path=/`;
@@ -113,6 +149,19 @@ const createOverviewPage = ({ deleteResponses = [] } = {}) => {
       return jsonResponse(
         nextResponse.body || { message: "Could not delete this quiz." },
         { ok: false, status: nextResponse.status },
+      );
+    }
+
+    if (requestUrl.startsWith("/api/quizzes/code/")) {
+      const request = { url: requestUrl, options };
+      joins.push(request);
+      const nextResponse = pendingJoinResponses.shift();
+      return (
+        nextResponse ||
+        jsonResponse({ message: "No quiz found with that code." }, {
+          ok: false,
+          status: 404,
+        })
       );
     }
 
@@ -144,7 +193,7 @@ const createOverviewPage = ({ deleteResponses = [] } = {}) => {
 
   window.eval(readFrontend("overview.js"));
 
-  return { dom, window, deletes };
+  return { dom, window, deletes, joins, navigations, clipboardWrites };
 };
 
 const clickSection = async (window, section) => {
@@ -173,7 +222,7 @@ describe("overview take actions", () => {
     const ownedUncompleted = getCard(window, "Quiz: Uncompleted quiz");
 
     expect(takeLabels(ownedLocked)).toEqual([]);
-    expect(ownedLocked.querySelector("[data-action='copy-link']")).not.toBe(
+    expect(ownedLocked.querySelector("[data-action='share']")).not.toBe(
       null,
     );
     expect(takeLabels(ownedRetakeable)).toEqual(["Take again"]);
@@ -203,6 +252,222 @@ describe("overview take actions", () => {
 
     expect(takenLocked.textContent).toContain("1 attempt");
     expect(takenLocked.textContent).toContain("Last score: 100%");
+  });
+});
+
+describe("overview sharing", () => {
+  it("opens the share dialog with an origin-based link and copyable code", async () => {
+    const clipboardWrites = [];
+    const { window } = createOverviewPage({ clipboardWrites });
+
+    await flush();
+
+    const card = getCard(window, "Quiz: Locked quiz");
+    const trigger = card.querySelector("[data-action='share']");
+    const modal = window.document.querySelector("#share-quiz-modal");
+    const dialog = modal.querySelector("[role='dialog']");
+    const linkInput = window.document.querySelector("#share-link-input");
+    const codeValue = window.document.querySelector("#share-code-value");
+    const copyLink = window.document.querySelector("#copy-share-link-btn");
+    const copyCode = window.document.querySelector("#copy-share-code-btn");
+
+    trigger.focus();
+    trigger.click();
+
+    expect(modal.hidden).toBe(false);
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(dialog.getAttribute("aria-labelledby")).toBe("share-modal-title");
+    expect(linkInput.value).toBe(
+      "http://localhost/quiz/64b000000000000000000011",
+    );
+    expect(codeValue.textContent.trim()).toBe("A7K9P2XZ");
+    expect(window.document.activeElement).toBe(copyLink);
+
+    copyLink.click();
+    await flush();
+    expect(clipboardWrites[0]).toBe(
+      "http://localhost/quiz/64b000000000000000000011",
+    );
+    expect(copyLink.textContent.trim()).toBe("Copied!");
+    expect(window.document.querySelector("#toast").textContent).toBe(
+      "Quiz link copied to clipboard!",
+    );
+
+    copyCode.click();
+    await flush();
+    expect(clipboardWrites[1]).toBe("A7K9P2XZ");
+    expect(copyCode.textContent.trim()).toBe("Copied!");
+    expect(window.document.querySelector("#toast").textContent).toBe(
+      "Quiz code copied to clipboard!",
+    );
+
+    dialog.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(modal.hidden).toBe(true);
+    expect(window.document.activeElement).toBe(trigger);
+  });
+});
+
+const openJoinDialog = (window) => {
+  const trigger = window.document.querySelector("[data-action='join-code']");
+  const modal = window.document.querySelector("#join-quiz-modal");
+  const dialog = modal.querySelector("[role='dialog']");
+  const input = window.document.querySelector("#join-code-input");
+  const form = window.document.querySelector("#join-quiz-form");
+  const submit = window.document.querySelector("#join-modal-submit");
+  const cancel = window.document.querySelector("#join-modal-cancel");
+  const error = window.document.querySelector("#join-code-error");
+
+  trigger.focus();
+  trigger.click();
+
+  return { trigger, modal, dialog, input, form, submit, cancel, error };
+};
+
+const setJoinCode = (window, input, value) => {
+  input.value = value;
+  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+};
+
+const submitJoinForm = (window, form) => {
+  form.dispatchEvent(
+    new window.Event("submit", { bubbles: true, cancelable: true }),
+  );
+};
+
+describe("overview join by code", () => {
+  it("opens accessibly and normalizes input without submitting incomplete codes", async () => {
+    const { window, joins } = createOverviewPage();
+
+    await flush();
+
+    const { trigger, modal, dialog, input, form, submit, error } =
+      openJoinDialog(window);
+
+    expect(modal.hidden).toBe(false);
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(dialog.getAttribute("aria-labelledby")).toBe("join-modal-title");
+    expect(
+      window.document.querySelector("#join-modal-title").textContent.trim(),
+    ).toBe("Join a Quiz");
+    expect(window.document.activeElement).toBe(input);
+    expect(submit.disabled).toBe(true);
+
+    setJoinCode(window, input, "ab-12 cd9!xyz");
+    expect(input.value).toBe("AB12CD9X");
+    expect(submit.disabled).toBe(false);
+
+    setJoinCode(window, input, "abc");
+    expect(input.value).toBe("ABC");
+    expect(submit.disabled).toBe(true);
+
+    submitJoinForm(window, form);
+    await flush();
+
+    expect(joins).toHaveLength(0);
+    expect(error.hidden).toBe(false);
+    expect(error.textContent).toBe(
+      "Enter the complete 8-character quiz code.",
+    );
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+
+    setJoinCode(window, input, "a7k9p2xz");
+    expect(error.hidden).toBe(true);
+
+    dialog.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(modal.hidden).toBe(true);
+    expect(window.document.activeElement).toBe(trigger);
+  });
+
+  it("submits once, shows loading feedback, and navigates on success", async () => {
+    let resolveLookup;
+    const pendingLookup = new Promise((resolve) => {
+      resolveLookup = resolve;
+    });
+    const { window, joins, navigations } = createOverviewPage({
+      joinResponses: [pendingLookup],
+    });
+
+    await flush();
+
+    const { modal, input, form, submit } = openJoinDialog(window);
+    const quizId = "64b000000000000000000042";
+
+    setJoinCode(window, input, "a7k9p2xz");
+    submitJoinForm(window, form);
+
+    expect(joins).toHaveLength(1);
+    expect(joins[0].url).toBe("/api/quizzes/code/A7K9P2XZ");
+    expect(submit.disabled).toBe(true);
+    expect(submit.textContent.trim()).toBe("Looking up…");
+    expect(modal.getAttribute("aria-busy")).toBe("true");
+
+    submitJoinForm(window, form);
+    expect(joins).toHaveLength(1);
+
+    resolveLookup(
+      jsonResponse({
+        data: { quiz: { id: quizId, shareUrl: `/quiz/${quizId}` } },
+      }),
+    );
+    await flush();
+
+    expect(navigations).toEqual([`/quiz/${quizId}`]);
+  });
+
+  it("shows lookup errors, allows retry, and ignores duplicate requests", async () => {
+    const { window, joins } = createOverviewPage({
+      joinResponses: [
+        jsonResponse(
+          { message: "No quiz found with that code." },
+          { ok: false, status: 404 },
+        ),
+        jsonResponse(
+          { message: "This quiz is currently a private draft and is not public yet." },
+          { ok: false, status: 403 },
+        ),
+      ],
+    });
+
+    await flush();
+
+    const { modal, input, form, submit, error } = openJoinDialog(window);
+
+    setJoinCode(window, input, "ZZZZ9999");
+    submitJoinForm(window, form);
+    await flush();
+
+    expect(joins).toHaveLength(1);
+    expect(modal.hidden).toBe(false);
+    expect(error.hidden).toBe(false);
+    expect(error.textContent).toBe("No quiz found with that code.");
+    expect(submit.disabled).toBe(false);
+    expect(submit.textContent.trim()).toBe("Find Quiz");
+    expect(input.disabled).toBe(false);
+
+    setJoinCode(window, input, "AAAA1111");
+    expect(error.hidden).toBe(true);
+
+    submitJoinForm(window, form);
+    await flush();
+
+    expect(joins).toHaveLength(2);
+    expect(error.textContent).toBe(
+      "This quiz is currently a private draft and is not public yet.",
+    );
+    expect(window.document.activeElement).toBe(input);
   });
 });
 

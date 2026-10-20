@@ -60,6 +60,28 @@
             <span>Create a quiz</span>
           </button>
 
+          <button
+            class="nav-item"
+            id="enter-quiz-code-btn"
+            type="button"
+            data-action="join-code"
+            aria-haspopup="dialog"
+          >
+            <svg
+              class="nav-icon"
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M8.75 1a.75.75 0 0 1 .75.75V3h1.5A1.75 1.75 0 0 1 12.75 4.75v1.5h1.25a.75.75 0 0 1 0 1.5H12.75v1.5a1.75 1.75 0 0 1-1.75 1.75H9.5v1.25a.75.75 0 0 1-1.5 0V11H6.5a1.75 1.75 0 0 1-1.75-1.75V7.75H3.5a.75.75 0 0 1 0-1.5h1.25V4.75A1.75 1.75 0 0 1 6.5 3H8V1.75A.75.75 0 0 1 8.75 1Zm-2.25 3.5a.25.25 0 0 0-.25.25v5c0 .138.112.25.25.25h5a.25.25 0 0 0 .25-.25v-5a.25.25 0 0 0-.25-.25h-5Z"
+              ></path>
+            </svg>
+            <span>Enter Quiz Code</span>
+          </button>
+
           <!-- Item 2: All your quizzes -->
           <button
             class="nav-item nav-item--active"
@@ -215,6 +237,173 @@
             Delete quiz
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Share Quiz Modal -->
+    <div id="share-quiz-modal" class="delete-modal-backdrop" hidden>
+      <div
+        class="delete-modal share-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-modal-title"
+        aria-describedby="share-modal-description"
+        tabindex="-1"
+      >
+        <div class="delete-modal__icon share-modal__icon" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            width="30"
+            height="30"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <path d="m8.6 13.5 6.8 4"></path>
+            <path d="m15.4 6.5-6.8 4"></path>
+          </svg>
+        </div>
+        <h2 id="share-modal-title" class="delete-modal__title">
+          Share this quiz
+        </h2>
+        <p id="share-modal-description" class="delete-modal__description">
+          Send the link or quiz code to anyone you want to invite.
+        </p>
+
+        <div class="share-modal__fields">
+          <div class="share-modal__field">
+            <label class="share-modal__label" for="share-link-input"
+              >Share link</label
+            >
+            <div class="share-modal__row">
+              <input
+                class="share-modal__input"
+                id="share-link-input"
+                type="text"
+                readonly
+              />
+              <button
+                class="btn btn--primary share-modal__copy"
+                type="button"
+                id="copy-share-link-btn"
+              >
+                Copy link
+              </button>
+            </div>
+          </div>
+
+          <div class="share-modal__field">
+            <span class="share-modal__label" id="share-code-label"
+              >Quiz code</span
+            >
+            <div class="share-modal__row">
+              <output
+                class="share-modal__code"
+                id="share-code-value"
+                aria-labelledby="share-code-label"
+              ></output>
+              <button
+                class="btn btn--primary share-modal__copy"
+                type="button"
+                id="copy-share-code-btn"
+              >
+                Copy code
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="delete-modal__actions">
+          <button class="btn" type="button" id="share-modal-close">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Join Quiz Modal -->
+    <div id="join-quiz-modal" class="delete-modal-backdrop" hidden>
+      <div
+        class="delete-modal join-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="join-modal-title"
+        aria-describedby="join-modal-description"
+        tabindex="-1"
+      >
+        <div class="delete-modal__icon join-modal__icon" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            width="30"
+            height="30"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="3" y="5" width="18" height="14" rx="3"></rect>
+            <path d="M7 15h.01"></path>
+            <path d="M11 15h.01"></path>
+            <path d="M15 15h.01"></path>
+            <path d="M7 11h10"></path>
+          </svg>
+        </div>
+        <h2 id="join-modal-title" class="delete-modal__title">Join a Quiz</h2>
+        <p id="join-modal-description" class="delete-modal__description">
+          Enter the 8-character quiz code shared by the quiz owner.
+        </p>
+
+        <form class="join-form" id="join-quiz-form" novalidate>
+          <label class="join-form__label" for="join-code-input"
+            >Quiz code</label
+          >
+          <input
+            class="join-form__input"
+            id="join-code-input"
+            name="quizCode"
+            type="text"
+            inputmode="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            enterkeyhint="go"
+            spellcheck="false"
+            placeholder="A7K9P2XZ"
+            required
+            maxlength="8"
+            minlength="8"
+            pattern="[A-Z0-9]{8}"
+            aria-describedby="join-code-hint join-code-error"
+          />
+          <p class="join-form__hint" id="join-code-hint">
+            Use 8 letters or numbers. Letters become uppercase.
+          </p>
+          <p
+            class="delete-modal__error join-form__error"
+            id="join-code-error"
+            role="alert"
+            hidden
+          ></p>
+
+          <div class="delete-modal__actions">
+            <button class="btn" type="button" id="join-modal-cancel">
+              Cancel
+            </button>
+            <button
+              class="btn btn--primary"
+              type="submit"
+              id="join-modal-submit"
+              disabled
+            >
+              Find Quiz
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 

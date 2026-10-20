@@ -17,6 +17,7 @@ const SUPPORTED_TYPES = new Set([
 
 const PROTECTED_FIELDS = [
   "owner",
+  "shareCode",
   "likes",
   "likeCount",
   "peopleTookCount",

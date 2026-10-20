@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import Mongoose from "mongoose";
 import app from "./app.js";
+import Quiz from "./model/quizModel.js";
 
 process.on("uncaughtException", (err) => {
   console.log("UNCAUGHT EXCEPTION");
@@ -16,8 +17,22 @@ Mongoose.connect(DB, {
   useNewUrlParser: true,
   useCreateIndex: true,
   useFindAndModify: false,
-}).then(() => {
+}).then(async () => {
   console.log("DB CONNECTED SUCCESSFULLY");
+
+  try {
+    await Quiz.init();
+    const backfilled = await Quiz.backfillMissingShareCodes();
+    if (backfilled > 0) {
+      console.log(`BACKFILLED SHARE CODES FOR ${backfilled} QUIZZES`);
+    }
+  } catch (error) {
+    console.error(
+      "QUIZ SHARE CODE MIGRATION FAILED",
+      error.name,
+      error.message,
+    );
+  }
 });
 
 const port = process.env.PORT;

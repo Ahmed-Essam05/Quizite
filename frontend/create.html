@@ -71,10 +71,45 @@
       <!-- Error / Status Banner -->
       <div
         id="error-banner"
-        class="create-error-banner"
+        class="create-validation-alert"
         role="alert"
+        aria-labelledby="error-banner-title"
+        aria-describedby="error-banner-message"
+        aria-atomic="true"
         hidden
-      ></div>
+      >
+        <div class="create-validation-alert__icon" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M12 7.5v5"></path>
+            <path d="M12 16.5h.01"></path>
+          </svg>
+        </div>
+        <div class="create-validation-alert__content">
+          <h2 id="error-banner-title" class="create-validation-alert__title">
+            Please fix the following
+          </h2>
+          <p
+            id="error-banner-message"
+            class="create-validation-alert__message"
+            hidden
+          ></p>
+          <ul
+            id="error-banner-list"
+            class="create-validation-alert__list"
+            hidden
+          ></ul>
+        </div>
+      </div>
 
       <!-- Quiz Metadata Section -->
       <section
@@ -95,8 +130,17 @@
             maxlength="150"
             required
             aria-required="true"
+            aria-describedby="quiz-title-hint quiz-title-error"
           />
-          <span class="field-hint">Required. Maximum 150 characters.</span>
+          <span class="field-hint" id="quiz-title-hint"
+            >Required. Maximum 150 characters.</span
+          >
+          <span
+            class="field-error"
+            id="quiz-title-error"
+            data-field-error
+            hidden
+          ></span>
         </div>
 
         <div class="field-group">
@@ -109,8 +153,17 @@
             rows="2"
             placeholder="A short description shown on the quiz card and share link..."
             maxlength="1000"
+            aria-describedby="quiz-description-hint quiz-description-error"
           ></textarea>
-          <span class="field-hint">Optional. Maximum 1000 characters.</span>
+          <span class="field-hint" id="quiz-description-hint"
+            >Optional. Maximum 1000 characters.</span
+          >
+          <span
+            class="field-error"
+            id="quiz-description-error"
+            data-field-error
+            hidden
+          ></span>
         </div>
 
         <div class="field-group">
@@ -212,21 +265,42 @@
             type="text"
             placeholder="e.g. Which country has the most natural lakes?"
             maxlength="2000"
+            aria-describedby="question-title-error"
           />
+          <span
+            class="field-error"
+            id="question-title-error"
+            data-field-error
+            hidden
+          ></span>
         </div>
 
         <!-- Multiple Choice Options Container -->
         <div id="mcq-options-container" class="options-box">
           <div class="options-box__header">
-            <span class="options-box__title">Answer Choices (2 to 6)</span>
-            <span class="field-hint">
+            <span class="options-box__title" id="mcq-choices-label"
+              >Answer Choices (2 to 6)</span
+            >
+            <span class="field-hint" id="mcq-choices-hint">
               Select the radio button next to the correct choice (required).
             </span>
           </div>
 
-          <div id="choices-list" class="choices-list">
+          <div
+            id="choices-list"
+            class="choices-list"
+            role="radiogroup"
+            aria-labelledby="mcq-choices-label"
+            aria-describedby="mcq-choices-hint mcq-answer-error"
+          >
             <!-- Dynamically populated choices -->
           </div>
+          <span
+            class="field-error"
+            id="mcq-answer-error"
+            data-field-error
+            hidden
+          ></span>
 
           <button class="btn btn-subtle" type="button" id="add-choice-btn">
             + Add choice
@@ -239,7 +313,12 @@
             <span class="options-box__title">Fixed Choices</span>
             <span class="field-hint">Select which answer is correct</span>
           </div>
-          <div class="tf-choices">
+          <div
+            class="tf-choices"
+            role="radiogroup"
+            aria-label="Correct true or false answer"
+            aria-describedby="tf-answer-error"
+          >
             <label class="tf-choice-item">
               <input type="radio" name="tf-correct" value="True" checked />
               <span>True</span>
@@ -249,6 +328,12 @@
               <span>False</span>
             </label>
           </div>
+          <span
+            class="field-error"
+            id="tf-answer-error"
+            data-field-error
+            hidden
+          ></span>
         </div>
 
         <!-- Written Answer Container -->
@@ -264,11 +349,21 @@
               Accepted answers
               <span class="field-optional">(leave empty to collect without auto-grading)</span>
             </span>
-            <span class="field-hint">
+            <span class="field-hint" id="accepted-answers-hint">
               Matching ignores capitalization and surrounding spaces. Add every
               acceptable spelling.
             </span>
-            <div id="accepted-answers-list" class="choices-list"></div>
+            <div
+              id="accepted-answers-list"
+              class="choices-list"
+              aria-describedby="accepted-answers-hint accepted-answers-error"
+            ></div>
+            <span
+              class="field-error"
+              id="accepted-answers-error"
+              data-field-error
+              hidden
+            ></span>
             <button
               class="btn btn-subtle"
               type="button"
@@ -347,6 +442,25 @@
               id="copy-modal-link-btn"
             >
               Copy link
+            </button>
+          </div>
+        </div>
+
+        <div class="share-box">
+          <label class="field-label" for="share-code-input">Quiz Code:</label>
+          <div class="share-input-row">
+            <input
+              class="field-input share-code-input"
+              id="share-code-input"
+              type="text"
+              readonly
+            />
+            <button
+              class="btn btn--primary"
+              type="button"
+              id="copy-modal-code-btn"
+            >
+              Copy code
             </button>
           </div>
         </div>

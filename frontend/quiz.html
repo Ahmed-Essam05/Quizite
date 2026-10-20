@@ -151,6 +151,54 @@
       </div>
     </main>
 
+    <!-- Unanswered Questions Confirmation Modal -->
+    <div id="unanswered-modal" class="delete-modal-backdrop" hidden>
+      <div
+        class="delete-modal unanswered-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unanswered-modal-title"
+        aria-describedby="unanswered-modal-message"
+        tabindex="-1"
+      >
+        <div
+          class="delete-modal__icon unanswered-modal__icon"
+          aria-hidden="true"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="30"
+            height="30"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path>
+            <path d="M12 9v4"></path>
+            <path d="M12 17h.01"></path>
+          </svg>
+        </div>
+        <h2 id="unanswered-modal-title" class="delete-modal__title">
+          You have unanswered questions
+        </h2>
+        <p id="unanswered-modal-message" class="delete-modal__description"></p>
+        <div class="delete-modal__actions">
+          <button
+            class="btn btn--primary"
+            type="button"
+            id="review-unanswered-btn"
+          >
+            Review unanswered questions
+          </button>
+          <button class="btn" type="button" id="submit-anyway-btn">
+            Submit anyway
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Notification Toast -->
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </body>

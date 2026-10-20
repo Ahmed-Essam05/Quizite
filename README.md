@@ -1,6 +1,6 @@
 # Quizite 🧠
 
-A full-stack quiz creation and taking platform built with **Node.js**, **Express**, and **MongoDB**. Users can create multi-type quizzes, share them via unique links, and get instant graded results.
+A full-stack quiz creation and taking platform built with **Node.js**, **Express**, and **MongoDB**. Users can create multi-type quizzes, share them via unique links or 8-character codes, and get instant graded results.
 
 ---
 
@@ -32,7 +32,8 @@ A full-stack quiz creation and taking platform built with **Node.js**, **Express
 - ✏️ **Quiz Editing** — Owners can load any quiz back into the builder and update it (`PATCH`)
 - 🗑 **Quiz Deletion** — Owners can delete quizzes from the dashboard with a confirmation step
 - 📄 **Multi-page Quizzes** — The builder keeps every question on one continuous page and groups them into pages of 10; takers move between pages with Previous / Next (max 8 pages / 80 questions)
-- 🌐 **Quiz Sharing** — Every quiz gets a unique shareable URL
+- 🌐 **Quiz Sharing** — Every quiz gets a unique shareable URL and an 8-character code (e.g. `A7K9P2XZ`) with a share dialog that copies either one
+- 🔎 **Join by Code** — "Enter Quiz Code" on the dashboard looks up a published quiz by its code and opens the existing taking page; draft codes resolve only for their owner
 - ✅ **Instant Grading** — Submit answers and land on a dedicated, refresh-safe results page with percentage score and per-question breakdown
 - 🛡 **Retake Control** — Per-quiz `allowRetakes` setting enforces a single submission when disabled
 - 👁 **Answer Reveal Control** — Per-quiz `showCorrectAnswers` setting decides whether takers see the answer key
@@ -98,7 +99,8 @@ A full-stack quiz creation and taking platform built with **Node.js**, **Express
                      │  Mongoose ODM
 ┌────────────────────▼────────────────────────────────┐
 │                   MongoDB Atlas                      │
-│  Collections: users, quizzes, quizattempts          │
+│  Collections: users, quizzes (unique shareCode),    │
+│               quizattempts                          │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -129,7 +131,7 @@ quizite/
 │
 ├── controllers/
 │   ├── authController.js      # signup, login, logout, resetPassword, updatePassword, protect, optionalAuth
-│   ├── quizController.js      # createQuiz, getQuiz, updateQuiz, deleteQuiz, submitQuiz, likeQuiz, unlikeQuiz
+│   ├── quizController.js      # createQuiz, getQuiz, getQuizByShareCode, updateQuiz, deleteQuiz, submitQuiz, likeQuiz, unlikeQuiz
 │   ├── userController.js      # getMe, getCompletedQuizzes, getLikedQuizzes, changePassword
 │   ├── overviewController.js  # getOverview — paginated owned quizzes + liked count
 │   └── errorController.js     # Global error handler with mapped DB/JWT errors
@@ -144,19 +146,22 @@ quizite/
 │   ├── appError.js            # Operational error class
 │   ├── catchAsync.js          # Async error wrapper for controllers
 │   ├── quizValidation.js      # Strict parsing/validation of quiz payloads
+│   ├── quizCode.js            # Secure 8-char share-code generation, validation, retry save, backfill helper
 │   └── email.js               # Nodemailer SMTP helper
 │
 ├── tests/
 │   ├── setup.js               # Vitest env setup (in-memory MongoDB)
 │   ├── helpers/               # db bootstrap, factories, agent helpers
 │   ├── auth.test.js           # Auth endpoint tests
-│   ├── quizApi.test.js        # Quiz CRUD/submit/like/users API tests
+│   ├── quizApi.test.js        # Quiz CRUD/submit/like/users API tests, including share-code lookup and access rules
+│   ├── quizCode.test.js       # Share-code generation, uniqueness, collision retry, and backfill tests
 │   ├── quizModel.test.js      # Schema validation tests
-│   ├── quizUi.test.js         # Quiz loading, submission, and results-page tests
+│   ├── quizUi.test.js         # Quiz loading, unanswered warnings, submission, results tests
+│   ├── createUi.test.js       # Quiz-builder validation and alert tests
 │   └── overviewUi.test.js     # Dashboard actions and delete-modal tests
 │
 └── frontend/
-    ├── overview.html / .js / .css   # Dashboard: owned + liked + taken quizzes, pagination, likes, edit/delete
+    ├── overview.html / .js / .css   # Dashboard: owned + liked + taken quizzes, pagination, likes, share dialog, join-by-code, edit/delete
     ├── login.html / auth.js / auth.css # Login form
     ├── signup.html                  # Signup form (shares auth.js / auth.css)
     ├── profile.html / .js / .css    # Profile info + password change
@@ -200,6 +205,7 @@ quizite/
 | `allowRetakes`   | Boolean    | When `false`, each user may submit once         |
 | `showCorrectAnswers` | Boolean | When `true`, takers see the answer key after submitting |
 | `publishedAt`    | Date       | Set when status first changes to `"published"`  |
+| `shareCode`      | String     | Auto-generated, immutable 8-char `A–Z0–9` join code; unique partial index |
 
 #### Page
 
@@ -304,7 +310,9 @@ All API endpoints are prefixed with `/api`.
         "likedByMe": true,
         "allowRetakes": false,
         "completedByMe": true,
-        "updatedAt": "..."
+        "updatedAt": "...",
+        "shareUrl": "/quiz/...",
+        "shareCode": "A7K9P2XZ"
       }
     ],
     "likedQuizCount": 7
@@ -406,6 +414,7 @@ disappear automatically because likes are stored on the quiz document.
 | Method | Path              | Auth      | Description                                       |
 |--------|-------------------|-----------|---------------------------------------------------|
 | POST   | `/`               | Required  | Create a new quiz                                 |
+| GET    | `/code/:code`     | Optional  | Look up a quiz by its 8-character share code      |
 | GET    | `/:id`            | Optional  | Get a quiz (draft only accessible to owner/admin) |
 | PATCH  | `/:id`            | Required  | Update quiz title, description, pages, settings, or status (owner only) |
 | DELETE | `/:id`            | Required  | Delete a quiz (owner only)                        |
@@ -416,6 +425,19 @@ disappear automatically because likes are stored on the quiz document.
 `GET /:id` additionally returns `isOwner`, `likedByMe`, and `canRetake` so the
 client can render the correct state. Owners receive the answer key
 (`correctChoiceId` / `acceptedAnswers`) when loading their own quiz for editing.
+
+**Share codes.** Every quiz is assigned a cryptographically random, unique
+8-character code (`A–Z`, `0–9`) on creation; it is never derived from the
+document `_id` and never regenerated when the quiz is opened, edited, or
+shared. Codes are declared in the schema, protected from client input, and
+enforced unique by a database partial unique index. On server startup, any
+legacy quizzes missing a code are backfilled in place without changing their
+IDs, ownership, settings, or attempt history. `GET /code/:code` normalizes
+lowercase input and returns only `{ id, shareUrl }` — never the quiz title or
+any private data. Lookup follows the existing access rules: a missing or
+invalid code returns `404` / `400`, and a draft's code returns `403` unless
+the requester is the owner or an admin. Looking up a code never creates an
+attempt or changes completion state.
 
 `POST /:id/like` and `DELETE /:id/like` are idempotent and return
 `{ likeCount, liked }`. Only published quizzes can be liked. The `likes` array
@@ -466,6 +488,8 @@ denormalized and repaired if a legacy document has drifted.
 > - The creator builder never paginates its question list: all questions remain
 >   visible and editable on one continuous screen, grouped by page. Only the
 >   quiz-taking page uses Previous / Next navigation.
+> - `shareCode` is server-generated and cannot be supplied or changed by
+>   clients; it is rejected as a protected field like `owner` or `likes`.
 
 #### Submit Answers Body
 
@@ -548,9 +572,13 @@ denormalized and repaired if a legacy document has drifted.
 - **Liked quizzes** — The sidebar "Liked quizzes" item loads `GET /api/users/me/liked` with pagination, loading/error states, and an empty state. Its badge uses `likedQuizCount` from the overview response (and the liked endpoint's `meta.total` once loaded), so no extra count request is required.
 - **Dashboard take actions** — All dashboard sections use the stored `allowRetakes` setting and the current user's completion state: uncompleted quizzes show "Take quiz", completed quizzes with retakes show "Take again", and completed no-retake quizzes show no take action. Direct quiz links still show the explanation when retakes are disabled.
 - **Delete confirmation** — Deleting an owned quiz opens a themed, accessible modal with the quiz title and a permanent-deletion warning. Cancel, backdrop, and Escape dismiss the dialog; confirmation shows a loading state, prevents duplicate requests, keeps errors inline for retry, and shows the existing success toast after the card is removed.
+- **Share dialog** — The owner card action opens a themed modal showing the quiz link and its 8-character code (monospace). Each has its own copy button with inline "Copied!" feedback and a toast; the link is built from the current deployment origin, so redirects and custom domains keep working.
+- **Join by code** — The sidebar and guest view expose "Enter Quiz Code". The modal accepts exactly 8 letters/numbers, auto-uppercases input, strips other characters, keeps submit disabled until complete, and supports Enter. While looking up it disables the form and shows a loading state; known codes navigate to the existing `/quiz/:id` route, invalid/unknown codes show a friendly inline message, and draft codes show the standard draft-privacy error. No attempt is created by looking up a code.
 - **Theme** — Dark/light mode toggle persisted in `localStorage`; defaults to OS preference
 - **Guest preview** — Append `?demo=1` to the overview URL to see a populated demo state
 - **Draft saving** — The quiz builder auto-saves to `localStorage` on every input change (create mode only; edit mode always loads from the server)
+- **Builder validation** — Publishing, saving, and adding questions validate all relevant fields at once. A themed `role="alert"` summary links to each invalid field, fields receive inline messages and `aria-invalid`, and errors clear automatically as the draft is corrected. Entered values are never discarded.
+- **Unanswered-question warning** — Submitting checks every question across all pages. If any multiple-choice, true/false, or written question is unanswered, a themed modal lists the displayed question numbers and offers "Review unanswered questions" (navigates to the first one and marks all unanswered cards) or "Submit anyway" (submits once with blank answers). Answers are preserved on review and failed submissions.
 - **Builder vs. taking pagination** — The creator builder shows every question in one continuous list, automatically grouped into page sections of 10 with page ranges (max 8 pages / 80 questions). Quiz takers see one page at a time and use Previous / Next; only the last page shows the submit button.
 - **Quiz loading state** — The initial spinner is tied only to the quiz `GET` request. Success reveals the quiz and failure reveals an error card; submission uses a separate "Submitting answers…" button state and never reuses the page loader.
 - **Dedicated results page** — After a successful submission, the server response is stored under a per-tab `sessionStorage` key with a one-hour TTL, then the browser navigates to `/quiz/:id/results`. No result data or answer keys are placed in the URL. Refreshing works in the same tab; missing or expired data shows a clear error instead of stale results.
@@ -573,6 +601,7 @@ denormalized and repaired if a legacy document has drifted.
 | HTTP headers               | `helmet` with an explicit CSP (`default-src 'self'`, Google Fonts allowed; `upgrade-insecure-requests` in production only) |
 | Parameter pollution        | `hpp`                                               |
 | Strict input validation    | `utils/quizValidation.js` rejects malformed payloads and protected fields |
+| Share code integrity       | `crypto.randomInt`, DB-level unique partial index, collision retries on create and backfill; codes are never exposed to non-owners |
 | Password change detection  | JWT `iat` checked against `passwordChangedAt`       |
 | Reset tokens               | SHA-256 hashed before storage, 10-minute expiry     |
 | Soft delete                | `isActive` flag prevents login without data removal |
@@ -610,6 +639,11 @@ npm start
 # Server starts on the PORT defined in config.env (default: 8000)
 # Visit http://localhost:8000
 ```
+
+On startup the server ensures the unique share-code index and backfills any
+legacy quiz that is missing a code (logging the number of updated quizzes).
+The backfill only writes `shareCode`, preserving IDs, ownership, permissions,
+retake settings, and attempt history. It is safe to run repeatedly.
 
 ### Run in Production
 
@@ -650,6 +684,11 @@ npm run start:prod
 | `npm run test:watch`| Run tests in watch mode                             |
 
 ### Testing
+
+The suite currently contains **131 tests across 7 files**, covering auth, quiz
+CRUD/submission/likes, share-code generation and lookup, schema validation,
+the quiz-taking UI, the builder, and the dashboard (including sharing and
+join-by-code flows).
 
 Tests run against an in-memory MongoDB provided by `mongodb-memory-server`
 (no running database required). If your environment needs a specific `mongod`

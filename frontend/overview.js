@@ -38,6 +38,8 @@ const demoQuizzes = [
     likedByMe: true,
     owner: { username: "Maya" },
     updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    shareUrl: "/quiz/demo-1",
+    shareCode: "A7K9P2XZ",
   },
   {
     id: "demo-2",
@@ -49,6 +51,8 @@ const demoQuizzes = [
     likedByMe: false,
     owner: { username: "Maya" },
     updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+    shareUrl: "/quiz/demo-2",
+    shareCode: "M4Q8R2TX",
   },
 ];
 
@@ -150,7 +154,12 @@ let toastTimer;
 let deleteTarget = null;
 let deleteTrigger = null;
 let isDeleting = false;
+let activeShare = null;
+let joinTrigger = null;
+let isLookingUp = false;
 const pendingLikes = new Set();
+const copyFeedbackTimers = new WeakMap();
+const copyButtonLabels = new WeakMap();
 
 const accountArea = document.querySelector("#account-area");
 const pageContent = document.querySelector("#page-content");
@@ -164,6 +173,18 @@ const deleteModalTitle = document.querySelector("#delete-modal-quiz-title");
 const deleteModalError = document.querySelector("#delete-modal-error");
 const deleteModalCancel = document.querySelector("#delete-modal-cancel");
 const deleteModalConfirm = document.querySelector("#delete-modal-confirm");
+const shareModal = document.querySelector("#share-quiz-modal");
+const shareLinkInput = document.querySelector("#share-link-input");
+const shareCodeValue = document.querySelector("#share-code-value");
+const copyShareLinkBtn = document.querySelector("#copy-share-link-btn");
+const copyShareCodeBtn = document.querySelector("#copy-share-code-btn");
+const shareModalClose = document.querySelector("#share-modal-close");
+const joinModal = document.querySelector("#join-quiz-modal");
+const joinForm = document.querySelector("#join-quiz-form");
+const joinCodeInput = document.querySelector("#join-code-input");
+const joinCodeError = document.querySelector("#join-code-error");
+const joinModalCancel = document.querySelector("#join-modal-cancel");
+const joinModalSubmit = document.querySelector("#join-modal-submit");
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -345,11 +366,11 @@ const renderOwnedQuiz = (quiz, index = 0) => {
         <a class="quiz-title" href="/quiz/${quizId}">${escapeHtml(quiz.title)}</a>
         <span class="quiz-pill quiz-pill--${status}">${statusLabel}</span>
         <div class="quiz-card-actions">
-          <button class="btn-subtle" type="button" data-action="copy-link" data-quiz-id="${quizId}" title="Copy unique quiz link" aria-label="Copy unique link for ${escapeHtml(quiz.title)}">
+          <button class="btn-subtle" type="button" data-action="share" data-quiz-id="${quizId}" title="Share this quiz" aria-label="Share ${escapeHtml(quiz.title)}" aria-haspopup="dialog">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
-              <path d="m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z"></path>
+              <path d="M11 2.5a2.5 2.5 0 1 1 .84 1.868l-4.33 2.31a2.5 2.5 0 0 1 0 2.644l4.33 2.31a2.5 2.5 0 1 1-.71 1.323l-4.33-2.31a2.5 2.5 0 1 1 0-5.29l4.33-2.31A2.5 2.5 0 0 1 11 2.5Zm0-1a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM5 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm6 5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"></path>
             </svg>
-            <span>Copy link</span>
+            <span>Share</span>
           </button>
           ${renderTakeAction(quiz)}
           ${ownerActions}
@@ -663,6 +684,14 @@ const render = () => {
         <h2 id="guest-title">Welcome to Quizite</h2>
         <p>Your central place for creating, organizing, and tracking quizzes. Log in or create an account to view and manage your quizzes.</p>
         <div class="state-actions">
+          <button
+            class="btn"
+            type="button"
+            data-action="join-code"
+            aria-haspopup="dialog"
+          >
+            Enter Quiz Code
+          </button>
           <a class="btn btn--primary" href="/login">Log in</a>
           <a class="btn" href="/signup">Sign up</a>
         </div>
@@ -1130,6 +1159,340 @@ deleteModal.addEventListener("keydown", (event) => {
   }
 });
 
+const buildShareUrl = (quiz) => {
+  const relativeUrl = quiz.shareUrl || `/quiz/${getQuizId(quiz)}`;
+
+  try {
+    return new URL(relativeUrl, window.location.origin).href;
+  } catch {
+    return `${window.location.origin}${relativeUrl.startsWith("/") ? relativeUrl : `/${relativeUrl}`}`;
+  }
+};
+
+const resetCopyFeedback = (button) => {
+  const timer = copyFeedbackTimers.get(button);
+  if (timer) {
+    window.clearTimeout(timer);
+    copyFeedbackTimers.delete(button);
+  }
+  const label = copyButtonLabels.get(button);
+  if (label) button.textContent = label;
+};
+
+const showCopyFeedback = (button) => {
+  if (!copyButtonLabels.has(button)) {
+    copyButtonLabels.set(button, button.textContent.trim());
+  }
+  resetCopyFeedback(button);
+  button.textContent = "Copied!";
+  const timer = window.setTimeout(() => {
+    button.textContent = copyButtonLabels.get(button) || "Copy";
+    copyFeedbackTimers.delete(button);
+  }, 2000);
+  copyFeedbackTimers.set(button, timer);
+};
+
+const copyTextToClipboard = async (value) => {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {}
+  }
+
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand?.("copy") === true;
+    textarea.remove();
+    return copied;
+  } catch {
+    return false;
+  }
+};
+
+const closeShareModal = () => {
+  if (shareModal.hidden) return;
+
+  const trigger = activeShare?.trigger;
+  activeShare = null;
+  shareModal.hidden = true;
+  document.body.classList.remove("delete-modal-open");
+  shareLinkInput.value = "";
+  shareCodeValue.textContent = "";
+  resetCopyFeedback(copyShareLinkBtn);
+  resetCopyFeedback(copyShareCodeBtn);
+  copyShareCodeBtn.disabled = false;
+
+  if (trigger?.isConnected) {
+    trigger.focus();
+  } else {
+    document.querySelector("#main-content")?.focus();
+  }
+};
+
+const openShareModal = (quizId, trigger) => {
+  const quiz = findQuiz(quizId);
+  if (!quiz) return;
+
+  closeDeleteModal();
+  closeJoinModal();
+
+  const shareCode = String(quiz.shareCode || "");
+  activeShare = {
+    url: buildShareUrl(quiz),
+    code: shareCode,
+    trigger,
+  };
+
+  shareLinkInput.value = activeShare.url;
+  shareCodeValue.textContent = shareCode || "Unavailable";
+  copyShareCodeBtn.disabled = !shareCode;
+  resetCopyFeedback(copyShareLinkBtn);
+  resetCopyFeedback(copyShareCodeBtn);
+
+  shareModal.hidden = false;
+  document.body.classList.add("delete-modal-open");
+  closeAccountMenu();
+  setSidebarOpen(false);
+  copyShareLinkBtn.focus();
+};
+
+copyShareLinkBtn.addEventListener("click", async () => {
+  if (!activeShare?.url) return;
+
+  const copied = await copyTextToClipboard(activeShare.url);
+  if (copied) {
+    showCopyFeedback(copyShareLinkBtn);
+    showToast("Quiz link copied to clipboard!");
+  } else {
+    showToast("Could not copy the link. Select it and copy manually.");
+  }
+});
+
+copyShareCodeBtn.addEventListener("click", async () => {
+  if (!activeShare?.code) return;
+
+  const copied = await copyTextToClipboard(activeShare.code);
+  if (copied) {
+    showCopyFeedback(copyShareCodeBtn);
+    showToast("Quiz code copied to clipboard!");
+  } else {
+    showToast("Could not copy the quiz code. Select it and copy manually.");
+  }
+});
+
+shareModalClose.addEventListener("click", closeShareModal);
+
+shareModal.addEventListener("click", (event) => {
+  if (event.target === shareModal) closeShareModal();
+});
+
+shareModal.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    closeShareModal();
+    return;
+  }
+
+  if (event.key !== "Tab") return;
+
+  const focusable = Array.from(
+    shareModal.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  );
+  if (focusable.length === 0) return;
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+
+  if (event.shiftKey && (active === first || !shareModal.contains(active))) {
+    event.preventDefault();
+    last.focus();
+  } else if (
+    !event.shiftKey &&
+    (active === last || !shareModal.contains(active))
+  ) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
+const clearJoinError = () => {
+  joinCodeError.textContent = "";
+  joinCodeError.hidden = true;
+  joinCodeInput.removeAttribute("aria-invalid");
+};
+
+const setJoinError = (message = "") => {
+  joinCodeError.textContent = message;
+  joinCodeError.hidden = !message;
+  if (message) {
+    joinCodeInput.setAttribute("aria-invalid", "true");
+  } else {
+    joinCodeInput.removeAttribute("aria-invalid");
+  }
+};
+
+const syncJoinSubmit = () => {
+  joinModalSubmit.disabled =
+    isLookingUp || !/^[A-Z0-9]{8}$/.test(joinCodeInput.value);
+};
+
+const setJoinBusy = (busy) => {
+  isLookingUp = busy;
+  joinCodeInput.disabled = busy;
+  joinModalCancel.disabled = busy;
+  joinModalSubmit.textContent = busy ? "Looking up…" : "Find Quiz";
+  joinModal.setAttribute("aria-busy", String(busy));
+  syncJoinSubmit();
+};
+
+const closeJoinModal = () => {
+  if (joinModal.hidden || isLookingUp) return;
+
+  const trigger = joinTrigger;
+  joinModal.hidden = true;
+  document.body.classList.remove("delete-modal-open");
+  joinModal.removeAttribute("aria-busy");
+  clearJoinError();
+  joinCodeInput.value = "";
+  joinTrigger = null;
+  setJoinBusy(false);
+
+  if (trigger?.isConnected) {
+    trigger.focus();
+  } else {
+    document.querySelector("#main-content")?.focus();
+  }
+};
+
+const openJoinModal = (trigger) => {
+  if (isLookingUp) return;
+
+  closeDeleteModal();
+  closeShareModal();
+
+  joinTrigger = trigger;
+  joinCodeInput.value = "";
+  clearJoinError();
+  setJoinBusy(false);
+
+  joinModal.hidden = false;
+  document.body.classList.add("delete-modal-open");
+  closeAccountMenu();
+  joinCodeInput.focus();
+};
+
+joinCodeInput.addEventListener("input", () => {
+  const sanitized = joinCodeInput.value
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 8);
+
+  if (joinCodeInput.value !== sanitized) {
+    joinCodeInput.value = sanitized;
+  }
+  if (!joinCodeError.hidden) clearJoinError();
+  syncJoinSubmit();
+});
+
+joinForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (isLookingUp) return;
+
+  const code = joinCodeInput.value;
+  if (!/^[A-Z0-9]{8}$/.test(code)) {
+    setJoinError("Enter the complete 8-character quiz code.");
+    joinCodeInput.focus();
+    return;
+  }
+
+  clearJoinError();
+  setJoinBusy(true);
+
+  try {
+    const response = await fetch(
+      `/api/quizzes/code/${encodeURIComponent(code)}`,
+      { credentials: "include" },
+    );
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setJoinError(
+        payload?.message ||
+          "We could not find a quiz with that code. Please try again.",
+      );
+      setJoinBusy(false);
+      joinCodeInput.focus();
+      return;
+    }
+
+    const target = payload?.data?.quiz?.shareUrl;
+    if (!target) {
+      setJoinError("No quiz found with that code.");
+      setJoinBusy(false);
+      joinCodeInput.focus();
+      return;
+    }
+
+    window.location.assign(target);
+  } catch {
+    setJoinError(
+      "A network error occurred while looking up the quiz. Please try again.",
+    );
+    setJoinBusy(false);
+    joinCodeInput.focus();
+  }
+});
+
+joinModalCancel.addEventListener("click", closeJoinModal);
+
+joinModal.addEventListener("click", (event) => {
+  if (event.target === joinModal) closeJoinModal();
+});
+
+joinModal.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    closeJoinModal();
+    return;
+  }
+
+  if (event.key !== "Tab") return;
+
+  const focusable = Array.from(
+    joinModal.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  );
+  if (focusable.length === 0) return;
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+
+  if (event.shiftKey && (active === first || !joinModal.contains(active))) {
+    event.preventDefault();
+    last.focus();
+  } else if (
+    !event.shiftKey &&
+    (active === last || !joinModal.contains(active))
+  ) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
 // Global click delegation
 document.addEventListener("click", async (event) => {
   // 1. Account trigger click
@@ -1162,7 +1525,21 @@ document.addEventListener("click", async (event) => {
     window.location.href = action === "login" ? "/login" : "/signup";
   }
 
-  // 4. Create quiz action
+  // 4. Enter a quiz code
+  const joinCodeButton = event.target.closest("[data-action='join-code']");
+  if (joinCodeButton) {
+    openJoinModal(joinCodeButton);
+    return;
+  }
+
+  // 5. Share an owned quiz
+  const shareButton = event.target.closest("[data-action='share']");
+  if (shareButton) {
+    openShareModal(shareButton.dataset.quizId, shareButton);
+    return;
+  }
+
+  // 6. Create quiz action
   const createButton = event.target.closest("[data-action='create']");
   if (createButton) {
     if (!state.authenticated) {
@@ -1173,7 +1550,7 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
-  // 5. Sidebar section switching
+  // 7. Sidebar section switching
   const sectionButton = event.target.closest("[data-section]");
   if (sectionButton) {
     const section = sectionButton.dataset.section;
@@ -1197,37 +1574,21 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
-  // 6. Like / unlike a quiz from a dashboard card
+  // 8. Like / unlike a quiz from a dashboard card
   const likeButton = event.target.closest("[data-action='like']");
   if (likeButton) {
     toggleQuizLike(likeButton);
     return;
   }
 
-  // 7. Copy unique link action
-  const copyLinkButton = event.target.closest("[data-action='copy-link']");
-  if (copyLinkButton) {
-    const quizId = copyLinkButton.dataset.quizId;
-    const url = `${window.location.origin}/quiz/${quizId}`;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(url).then(
-        () => showToast("Unique quiz link copied to clipboard!"),
-        () => showToast(`Share link: ${url}`),
-      );
-    } else {
-      showToast(`Share link: ${url}`);
-    }
-    return;
-  }
-
-  // 7. Edit quiz action
+  // 9. Edit quiz action
   const editButton = event.target.closest("[data-action='edit']");
   if (editButton) {
     window.location.href = `/quiz/${editButton.dataset.quizId}/edit`;
     return;
   }
 
-  // 8. Delete quiz action
+  // 10. Delete quiz action
   const deleteButton = event.target.closest("[data-action='delete']");
   if (deleteButton) {
     openDeleteModal(
@@ -1238,7 +1599,7 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
-  // 9. Pagination actions
+  // 11. Pagination actions
   const pageButton = event.target.closest("[data-action='page']");
   if (pageButton && !pageButton.disabled) {
     const page = Number(pageButton.dataset.page);
@@ -1272,7 +1633,7 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
-  // 10. Account dropdown actions
+  // 12. Account dropdown actions
   const accountAction = event.target.closest("[data-account-action]");
   if (accountAction) {
     const action = accountAction.dataset.accountAction;

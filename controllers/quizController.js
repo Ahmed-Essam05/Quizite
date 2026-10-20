@@ -6,6 +6,11 @@ import User from "../model/userModel.js";
 import AppError from "../utils/appError.js";
 import catchAsync from "../utils/catchAsync.js";
 import {
+  isValidQuizCode,
+  normalizeQuizCode,
+  saveWithUniqueShareCode,
+} from "../utils/quizCode.js";
+import {
   countQuestions,
   parseQuizPayload,
 } from "../utils/quizValidation.js";
@@ -64,7 +69,10 @@ const buildQuestionDto = (question, includeAnswerKey) => {
   return dto;
 };
 
-const buildQuizDto = (quiz, { includeAnswerKey = false } = {}) => ({
+const buildQuizDto = (
+  quiz,
+  { includeAnswerKey = false, includeShareCode = false } = {},
+) => ({
   id: quiz._id,
   title: quiz.title,
   description: quiz.description,
@@ -79,6 +87,7 @@ const buildQuizDto = (quiz, { includeAnswerKey = false } = {}) => ({
   showCorrectAnswers: Boolean(quiz.showCorrectAnswers),
   publishedAt: quiz.publishedAt,
   shareUrl: `/quiz/${quiz._id}`,
+  ...(includeShareCode ? { shareCode: quiz.shareCode } : {}),
   pages: (quiz.pages || []).map((page) => ({
     id: page._id,
     title: page.title,
@@ -111,7 +120,7 @@ export const createQuiz = catchAsync(async (req, res, next) => {
     publishedAt: status === "published" ? new Date() : undefined,
   });
 
-  await quiz.save();
+  await saveWithUniqueShareCode(quiz);
 
   // Atomically denormalize into user's ownedQuizzes
   await User.findByIdAndUpdate(req.user._id, {
@@ -131,6 +140,7 @@ export const createQuiz = catchAsync(async (req, res, next) => {
         showCorrectAnswers: quiz.showCorrectAnswers,
         publishedAt: quiz.publishedAt,
         shareUrl: `/quiz/${quiz._id}`,
+        shareCode: quiz.shareCode,
       },
     },
   });
@@ -171,12 +181,56 @@ export const getQuiz = catchAsync(async (req, res, next) => {
   return res.status(200).json({
     status: "success",
     data: {
-      quiz: buildQuizDto(quiz, { includeAnswerKey: isOwner }),
+      quiz: buildQuizDto(quiz, {
+        includeAnswerKey: isOwner,
+        includeShareCode: isOwner,
+      }),
       isOwner,
       likedByMe: Boolean(
         req.user && (quiz.likes || []).some((id) => id.equals(req.user._id)),
       ),
       canRetake: quiz.allowRetakes || !req.user || !alreadyCompleted,
+    },
+  });
+});
+
+export const getQuizByShareCode = catchAsync(async (req, res, next) => {
+  const shareCode = normalizeQuizCode(req.params.code);
+
+  if (!isValidQuizCode(shareCode)) {
+    return next(
+      new AppError("Enter a valid 8-character quiz code.", 400),
+    );
+  }
+
+  const quiz = await Quiz.findOne({ shareCode })
+    .select("_id status owner")
+    .lean();
+
+  if (!quiz) {
+    return next(new AppError("No quiz found with that code.", 404));
+  }
+
+  if (
+    quiz.status === "draft" &&
+    !isOwnerOf(quiz, req.user) &&
+    !isAdminUser(req.user)
+  ) {
+    return next(
+      new AppError(
+        "This quiz is currently a private draft and is not public yet.",
+        403,
+      ),
+    );
+  }
+
+  return res.status(200).json({
+    status: "success",
+    data: {
+      quiz: {
+        id: quiz._id,
+        shareUrl: `/quiz/${quiz._id}`,
+      },
     },
   });
 });
@@ -265,6 +319,7 @@ export const updateQuiz = catchAsync(async (req, res, next) => {
         showCorrectAnswers: quiz.showCorrectAnswers,
         publishedAt: quiz.publishedAt,
         shareUrl: `/quiz/${quiz._id}`,
+        shareCode: quiz.shareCode,
       },
     },
   });
