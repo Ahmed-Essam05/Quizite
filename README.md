@@ -82,7 +82,7 @@ A full-stack quiz creation and taking platform built with **Node.js**, **Express
 ┌────────────────────▼────────────────────────────────┐
 │                  Express App  (app.js)               │
 │                                                     │
-│  Static Files (/frontend)                           │
+│  Static Files (/css, /js) from frontend/            │
 │  Page Routes  /, /login, /signup, /create,          │
 │               /profile, /users/:username, /quiz/:id,│
 │               /quiz/:id/edit                        │
@@ -108,7 +108,7 @@ A full-stack quiz creation and taking platform built with **Node.js**, **Express
 
 ### Request Flow
 
-1. Browser loads a static HTML page from `express.static`
+1. Browser loads an HTML page from an Express page route; `/css` and `/js` serve the static frontend assets
 2. The page JS calls the REST API using `fetch()` with `credentials: "include"`
 3. Express middleware validates the JWT from the `jwt` cookie
 4. The controller performs the business logic against MongoDB
@@ -164,20 +164,53 @@ quizite/
 │   ├── createUi.test.js       # Quiz-builder validation and alert tests
 │   ├── overviewUi.test.js     # Dashboard actions, likes visibility, participant stats, and modal tests
 │   ├── socialApi.test.js      # Owner-only liker lists, profile ranking/filtering, and unique participant tests
-│   └── publicProfileUi.test.js # Public profile top-three rendering, creator modal, and error-state tests
+│   ├── publicProfileUi.test.js # Public profile top-three rendering, creator modal, and error-state tests
+│   └── frontendServing.test.js # Relocated page shells, asset references, static serving, and legacy URL redirects
 │
 └── frontend/
-    ├── overview.html / .js / .css   # Dashboard: owned + liked + taken quizzes, pagination, likes, share dialog, join-by-code, edit/delete
-    ├── login.html / auth.js / auth.css # Login form
-    ├── signup.html                  # Signup form (shares auth.js / auth.css)
-    ├── profile.html / .js / .css    # Profile info + password change
-    ├── public-profile.html / .js / .css # Public creator profile: likes received + top three published quizzes
-    ├── create.html / .js / .css     # Quiz builder UI (create + edit mode)
-    ├── quiz.html / .js / .css       # Quiz taking UI
-    ├── likesModal.js / likes.css    # Shared creator-only likers modal controller and styles
-    ├── results.html / .js / .css    # Dedicated quiz results page
-    └── quizResultStore.js           # Per-tab short-lived results handoff
+    ├── pages/
+    │   ├── overview.html            # Dashboard: owned + liked + taken quizzes, pagination, likes, sharing, join-by-code
+    │   ├── login.html               # Login form
+    │   ├── signup.html              # Signup form (shares auth JS/CSS with login)
+    │   ├── profile.html             # Private profile info + password change
+    │   ├── public-profile.html      # Public creator profile: likes received + top three quizzes
+    │   ├── create.html              # Quiz builder UI (create + edit mode)
+    │   ├── quiz.html                # Quiz taking UI
+    │   └── results.html             # Dedicated quiz results page
+    ├── css/
+    │   ├── design-system.css        # Global tokens, primitives, and shared components
+    │   ├── shared/
+    │   │   ├── auth.css             # Auth/profile topbar and form styles
+    │   │   ├── overview.css         # App shell and dashboard styles reused by create/quiz/results
+    │   │   ├── profile.css          # Profile cards shared by private and public profiles
+    │   │   └── quiz.css             # Quiz and results presentation styles
+    │   ├── pages/
+    │   │   ├── create.css           # Quiz builder-only styles
+    │   │   ├── public-profile.css   # Public profile-only styles
+    │   │   └── results.css          # Results page-only styles
+    │   └── components/
+    │       └── likes.css            # Shared creator-only likers modal styles
+    └── js/
+        ├── pages/
+        │   ├── auth.js              # Login/signup controller
+        │   ├── overview.js          # Dashboard controller
+        │   ├── create.js            # Quiz builder controller
+        │   ├── quiz.js              # Quiz-taking controller
+        │   ├── results.js           # Results page controller
+        │   ├── profile.js           # Private profile controller
+        │   └── public-profile.js    # Public profile controller
+        ├── components/
+        │   └── likesModal.js        # Shared creator-only likers modal controller
+        └── services/
+            └── quizResultStore.js   # Per-tab short-lived results handoff
 ```
+
+Page HTML lives under `frontend/pages/`; Express still serves the canonical
+URLs (`/`, `/login`, `/signup`, `/profile`, `/users/:username`, `/create`,
+`/quiz/:id`, `/quiz/:id/edit`, and `/quiz/:id/results`) from those files.
+Stylesheets and scripts are mounted at `/css` and `/js`; the old root-level
+`.html` page URLs redirect permanently to their canonical paths. Uploaded
+quiz icons remain on the separate `/uploads` route.
 
 ---
 
@@ -635,15 +668,15 @@ includes liker emails, password data, tokens, or private account flags.
 
 | URL              | File              | Description                                              | Auth Required |
 |------------------|-------------------|----------------------------------------------------------|---------------|
-| `/`              | `overview.html`   | Dashboard — owned, liked, and taken quizzes (paginated)  | No (guest view)|
-| `/login`         | `login.html`      | Login form                                               | No            |
-| `/signup`        | `signup.html`     | Signup form                                              | No            |
-| `/profile`       | `profile.html`    | Private profile info + stats and password change form     | Yes (redirects to `/login`) |
-| `/users/:username` | `public-profile.html` | Public creator profile: likes received and top three published quizzes | No (public) |
-| `/create`        | `create.html`     | Quiz builder with question type tabs and live preview    | Yes (redirects to `/login`) |
-| `/quiz/:id`      | `quiz.html`       | Take a quiz; successful submissions navigate to results  | Yes (redirects to `/login?next=...`) |
-| `/quiz/:id/results` | `results.html` | Dedicated scored results and per-question review        | No (public; per-tab result data) |
-| `/quiz/:id/edit` | `create.html`     | Same builder in edit mode, pre-loaded with the quiz      | Yes (redirects to `/login`) |
+| `/`              | `pages/overview.html` | Dashboard — owned, liked, and taken quizzes (paginated)  | No (guest view)|
+| `/login`         | `pages/login.html` | Login form                                               | No            |
+| `/signup`        | `pages/signup.html` | Signup form                                              | No            |
+| `/profile`       | `pages/profile.html` | Private profile info + stats and password change form     | Yes (redirects to `/login`) |
+| `/users/:username` | `pages/public-profile.html` | Public creator profile: likes received and top three published quizzes | No (public) |
+| `/create`        | `pages/create.html` | Quiz builder with question type tabs and live preview    | Yes (redirects to `/login`) |
+| `/quiz/:id`      | `pages/quiz.html` | Take a quiz; successful submissions navigate to results  | Yes (redirects to `/login?next=...`) |
+| `/quiz/:id/results` | `pages/results.html` | Dedicated scored results and per-question review        | No (public; per-tab result data) |
+| `/quiz/:id/edit` | `pages/create.html` | Same builder in edit mode, pre-loaded with the quiz      | Yes (redirects to `/login`) |
 
 ### Notable Frontend Behaviours
 
@@ -769,11 +802,11 @@ npm run start:prod
 
 ### Testing
 
-The suite currently contains **186 tests across 10 files**, covering auth,
+The suite currently contains **197 tests across 11 files**, covering auth,
 quiz CRUD/submission/likes, share-code generation and lookup, schema
 validation, owner-only liker lists, public profile ranking and privacy, unique
-participants, the quiz-taking UI, the builder, and the dashboard (including
-sharing and join-by-code flows).
+participants, relocated frontend serving and asset references, the quiz-taking
+UI, the builder, and the dashboard (including sharing and join-by-code flows).
 
 Tests run against an in-memory MongoDB provided by `mongodb-memory-server`
 (no running database required). If your environment needs a specific `mongod`

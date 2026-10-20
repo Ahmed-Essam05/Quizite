@@ -48,7 +48,11 @@ app.use(cookieParser());
 
 // Frontend assets are deliberately served before API middleware so rendering the
 // overview never depends on database connectivity or request-body processing.
-app.use(express.static(path.join(__dirname, "frontend")));
+const frontendDir = path.join(__dirname, "frontend");
+const pagesDir = path.join(frontendDir, "pages");
+
+app.use("/css", express.static(path.join(frontendDir, "css")));
+app.use("/js", express.static(path.join(frontendDir, "js")));
 
 app.use(
   "/uploads",
@@ -58,40 +62,60 @@ app.use(
   }),
 );
 
+// The pages used to be served from the frontend root. Keep old bookmarked
+// .html paths working while the canonical page URLs stay unchanged.
+const legacyPageRedirects = {
+  "overview.html": "/",
+  "login.html": "/login",
+  "signup.html": "/signup",
+  "create.html": "/create",
+  "profile.html": "/profile",
+  "quiz.html": "/",
+  "results.html": "/",
+  "public-profile.html": "/",
+};
+
+app.get(
+  Object.keys(legacyPageRedirects).map((file) => `/${file}`),
+  (req, res) => {
+    res.redirect(301, legacyPageRedirects[req.path.slice(1)] || "/");
+  },
+);
+
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "overview.html"));
+  res.sendFile(path.join(pagesDir, "overview.html"));
 });
 
 app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "login.html"));
+  res.sendFile(path.join(pagesDir, "login.html"));
 });
 
 app.get("/signup", (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "signup.html"));
+  res.sendFile(path.join(pagesDir, "signup.html"));
 });
 
 app.get("/create", protectPage, (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "create.html"));
+  res.sendFile(path.join(pagesDir, "create.html"));
 });
 
 app.get("/profile", protectPage, (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "profile.html"));
+  res.sendFile(path.join(pagesDir, "profile.html"));
 });
 
 app.get("/users/:username", (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "public-profile.html"));
+  res.sendFile(path.join(pagesDir, "public-profile.html"));
 });
 
 app.get("/quiz/:id/edit", protectPage, (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "create.html"));
+  res.sendFile(path.join(pagesDir, "create.html"));
 });
 
 app.get("/quiz/:id/results", (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "results.html"));
+  res.sendFile(path.join(pagesDir, "results.html"));
 });
 
 app.get("/quiz/:id", protectPage, (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "quiz.html"));
+  res.sendFile(path.join(pagesDir, "quiz.html"));
 });
 
 //limit request from same api

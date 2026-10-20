@@ -148,6 +148,23 @@ describe("Authentication", () => {
       );
     });
 
+    it("serves protected page shells from the relocated pages directory", async () => {
+      const { agent } = await registerAgent({}, server);
+      const routes = [
+        ["/create", 'id="quiz-title"'],
+        ["/profile", 'id="profile-content"'],
+        ["/quiz/abc/edit", 'id="quiz-title"'],
+        ["/quiz/abc", 'id="quiz-container"'],
+      ];
+
+      for (const [route, marker] of routes) {
+        const response = await agent.get(route);
+        expect(response.status, route).toBe(200);
+        expect(response.headers["content-type"], route).toContain("text/html");
+        expect(response.text, route).toContain(marker);
+      }
+    });
+
     it("redirects other protected pages and leaves public pages alone", async () => {
       const create = await request(server).get("/create");
       expect(create.status).toBe(302);

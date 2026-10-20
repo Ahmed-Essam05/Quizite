@@ -17,7 +17,7 @@ const flush = async () => {
 };
 
 const createLoginPage = (search = "") => {
-  const dom = new JSDOM(readFrontend("login.html"), {
+  const dom = new JSDOM(readFrontend("pages/login.html"), {
     url: `http://localhost/login${search}`,
     runScripts: "outside-only",
     pretendToBeVisual: true,
@@ -50,7 +50,7 @@ const createLoginPage = (search = "") => {
     }),
   });
 
-  window.eval(readFrontend("auth.js"));
+  window.eval(readFrontend("js/pages/auth.js"));
 
   return { dom, window, replacements };
 };

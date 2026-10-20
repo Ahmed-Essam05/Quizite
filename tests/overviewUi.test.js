@@ -99,7 +99,7 @@ const createOverviewPage = ({
   clipboardWrites = [],
   quizzes: initialQuizzes = dashboardQuizzes(),
 } = {}) => {
-  const dom = new JSDOM(readFrontend("overview.html"), {
+  const dom = new JSDOM(readFrontend("pages/overview.html"), {
     url: "http://localhost/",
     runScripts: "outside-only",
     pretendToBeVisual: true,
@@ -224,8 +224,8 @@ const createOverviewPage = ({
     return jsonResponse({ message: "Not found" }, { ok: false, status: 404 });
   };
 
-  window.eval(readFrontend("likesModal.js"));
-  window.eval(readFrontend("overview.js"));
+  window.eval(readFrontend("js/components/likesModal.js"));
+  window.eval(readFrontend("js/pages/overview.js"));
 
   return {
     dom,

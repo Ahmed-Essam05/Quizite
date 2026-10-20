@@ -5,20 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Create a Quizite account to start building and tracking quizzes."
+      content="Log in to Quizite to access and manage your quizzes."
     />
-    <title>Quizite — Create account</title>
+    <title>Quizite — Log in</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/auth.css" />
-    <link rel="stylesheet" href="/design-system.css" />
-    <script src="/auth.js" defer></script>
+    <link rel="stylesheet" href="/css/shared/auth.css" />
+    <link rel="stylesheet" href="/css/design-system.css" />
+    <script src="/js/pages/auth.js" defer></script>
   </head>
-  <body data-page="signup">
+  <body data-page="login">
     <a class="skip-link" href="#main-content">Skip to main content</a>
 
     <header class="auth-topbar">
@@ -41,20 +41,20 @@
     <main id="main-content" class="auth-main" tabindex="-1">
       <div class="auth-card">
         <div class="auth-card__header">
-          <h1 class="auth-title">Create your account</h1>
+          <h1 class="auth-title">Sign in to Quizite</h1>
           <p class="auth-subtitle">
-            Already have an account?
-            <a class="auth-link" href="/login">Sign in</a>.
+            New to Quizite?
+            <a class="auth-link" href="/signup">Create an account</a>.
           </p>
         </div>
 
         <div id="error-banner" class="error-banner" role="alert" hidden></div>
 
         <form
-          id="signup-form"
+          id="login-form"
           class="auth-form"
           novalidate
-          aria-label="Sign up form"
+          aria-label="Log in form"
         >
           <!-- Username -->
           <div class="field-group">
@@ -70,35 +70,11 @@
               spellcheck="false"
               required
               aria-required="true"
-              aria-describedby="username-hint username-error"
+              aria-describedby="username-error"
             />
-            <span class="field-hint" id="username-hint"
-              >3–30 characters. Letters, numbers, and underscores only.</span
-            >
             <span
               class="field-error"
               id="username-error"
-              role="alert"
-              hidden
-            ></span>
-          </div>
-
-          <!-- Email -->
-          <div class="field-group">
-            <label class="field-label" for="email">Email address</label>
-            <input
-              class="field-input"
-              id="email"
-              name="email"
-              type="email"
-              autocomplete="email"
-              required
-              aria-required="true"
-              aria-describedby="email-error"
-            />
-            <span
-              class="field-error"
-              id="email-error"
               role="alert"
               hidden
             ></span>
@@ -113,10 +89,10 @@
                 id="password"
                 name="password"
                 type="password"
-                autocomplete="new-password"
+                autocomplete="current-password"
                 required
                 aria-required="true"
-                aria-describedby="password-hint password-error"
+                aria-describedby="password-error"
               />
               <button
                 class="show-password"
@@ -124,6 +100,7 @@
                 aria-label="Show password"
                 data-toggle-password
               >
+                <!-- Eye icon (GitHub Octicons style) -->
                 <svg
                   class="eye-icon"
                   viewBox="0 0 16 16"
@@ -138,10 +115,6 @@
                 </svg>
               </button>
             </div>
-            <span class="field-hint" id="password-hint"
-              >At least 8 characters with at least one letter and one
-              number.</span
-            >
             <span
               class="field-error"
               id="password-error"
@@ -152,15 +125,10 @@
 
           <!-- Submit -->
           <button class="auth-submit" id="submit-btn" type="submit">
-            <span class="submit-label">Create account</span>
+            <span class="submit-label">Sign in</span>
             <span class="submit-spinner" aria-hidden="true" hidden></span>
           </button>
         </form>
-
-        <p class="auth-terms">
-          By creating an account you agree to our
-          <a class="auth-link" href="#">Terms of Service</a>.
-        </p>
       </div>
     </main>
 

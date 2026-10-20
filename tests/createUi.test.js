@@ -43,7 +43,7 @@ const createBuilderPage = ({
   iconUploadResponse = null,
   editQuiz = null,
 } = {}) => {
-  const dom = new JSDOM(readFrontend("create.html"), {
+  const dom = new JSDOM(readFrontend("pages/create.html"), {
     url,
     runScripts: "outside-only",
     pretendToBeVisual: true,
@@ -51,8 +51,8 @@ const createBuilderPage = ({
   const { window } = dom;
   const requests = [];
   const style = window.document.createElement("style");
-  style.textContent = `${readFrontend("overview.css")}\n${readFrontend(
-    "create.css",
+  style.textContent = `${readFrontend("css/shared/overview.css")}\n${readFrontend(
+    "css/pages/create.css",
   )}`;
   window.document.head.appendChild(style);
 
@@ -92,7 +92,7 @@ const createBuilderPage = ({
     return jsonResponse({ message: "Not found" }, { ok: false, status: 404 });
   };
 
-  window.eval(readFrontend("create.js"));
+  window.eval(readFrontend("js/pages/create.js"));
 
   return { dom, window, requests };
 };

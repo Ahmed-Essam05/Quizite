@@ -29,7 +29,7 @@ const createProfilePage = (
   response,
   { user = null, likesResponse = null } = {},
 ) => {
-  const dom = new JSDOM(readFrontend("public-profile.html"), {
+  const dom = new JSDOM(readFrontend("pages/public-profile.html"), {
     url: "http://localhost/users/alice",
     runScripts: "outside-only",
     pretendToBeVisual: true,
@@ -58,8 +58,8 @@ const createProfilePage = (
     return response;
   };
 
-  window.eval(readFrontend("likesModal.js"));
-  window.eval(readFrontend("public-profile.js"));
+  window.eval(readFrontend("js/components/likesModal.js"));
+  window.eval(readFrontend("js/pages/public-profile.js"));
 
   return { dom, window, requests };
 };

@@ -139,7 +139,7 @@ const answerQuestion = (window, questionNumber) => {
 };
 
 const createQuizPage = (fetchImpl) => {
-  const dom = new JSDOM(readFrontend("quiz.html"), {
+  const dom = new JSDOM(readFrontend("pages/quiz.html"), {
     url: `http://localhost/quiz/${QUIZ_ID}`,
     runScripts: "outside-only",
     pretendToBeVisual: true,
@@ -147,7 +147,7 @@ const createQuizPage = (fetchImpl) => {
   const { window } = dom;
   const navigations = [];
   const style = window.document.createElement("style");
-  style.textContent = readFrontend("quiz.css");
+  style.textContent = readFrontend("css/shared/quiz.css");
   window.document.head.appendChild(style);
 
   window.matchMedia = () => ({
@@ -169,8 +169,8 @@ const createQuizPage = (fetchImpl) => {
   });
   window.fetch = fetchImpl;
 
-  window.eval(readFrontend("quizResultStore.js"));
-  window.eval(readFrontend("quiz.js"));
+  window.eval(readFrontend("js/services/quizResultStore.js"));
+  window.eval(readFrontend("js/pages/quiz.js"));
 
   return { dom, window, navigations };
 };
@@ -219,7 +219,7 @@ const createResultsPage = ({
   savedAt,
   storedValue = null,
 } = {}) => {
-  const dom = new JSDOM(readFrontend("results.html"), {
+  const dom = new JSDOM(readFrontend("pages/results.html"), {
     url: `http://localhost/quiz/${quizId}/results`,
     runScripts: "outside-only",
     pretendToBeVisual: true,
@@ -240,8 +240,8 @@ const createResultsPage = ({
     seedResult(window, result, savedAt);
   }
 
-  window.eval(readFrontend("quizResultStore.js"));
-  window.eval(readFrontend("results.js"));
+  window.eval(readFrontend("js/services/quizResultStore.js"));
+  window.eval(readFrontend("js/pages/results.js"));
 
   return { dom, window };
 };
@@ -334,7 +334,7 @@ describe("quiz taking page", () => {
     });
 
     await flush();
-    window.eval(readFrontend("quiz.js"));
+    window.eval(readFrontend("js/pages/quiz.js"));
     await flush();
 
     expect(fetchCount).toBe(1);
